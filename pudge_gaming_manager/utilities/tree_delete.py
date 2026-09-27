@@ -48,10 +48,11 @@ import contextlib
 import ctypes
 import os
 import pathlib
+import time
 from concurrent.futures import ThreadPoolExecutor
 from ctypes import wintypes
 from dataclasses import dataclass, field
-from typing import Iterator
+from typing import Callable, Iterator
 
 _IS_WINDOWS = os.name == "nt"
 
@@ -97,6 +98,9 @@ _ERROR_NOT_SUPPORTED = 50
 _PARALLEL_THRESHOLD = 64
 _WORKERS = 8
 _ENUM_BUFFER = 64 * 1024
+#: Seconds between progress reports: often enough to look live, rare enough
+#: that reporting never shows up next to ~400 us per deleted file.
+_PROGRESS_INTERVAL = 0.25
 
 
 class _UnicodeString(ctypes.Structure):
@@ -268,11 +272,27 @@ def _entries(handle: int) -> Iterator[_Entry]:
 
 
 class _Walker:
-    def __init__(self, backup_intent: bool, measure_only: bool) -> None:
+    def __init__(
+        self,
+        backup_intent: bool,
+        measure_only: bool,
+        progress: Callable[[DeleteStats], None] | None = None,
+    ) -> None:
         self.options = _FILE_OPEN_FOR_BACKUP_INTENT if backup_intent else 0
         self.measure_only = measure_only
         self.stats = DeleteStats()
         self.pool: ThreadPoolExecutor | None = None
+        self.progress = progress
+        self._reported = time.monotonic()
+
+    def _tick(self) -> None:
+        """Report the running totals, at most once per interval."""
+        if self.progress is None:
+            return
+        now = time.monotonic()
+        if now - self._reported >= _PROGRESS_INTERVAL:
+            self._reported = now
+            self.progress(self.stats)
 
     def _delete_leaf(self, parent: int, entry: _Entry) -> tuple[int, int]:
         """Delete a file or a link. Returns (win32 error, bytes freed)."""
@@ -327,6 +347,7 @@ class _Walker:
             else:
                 self.stats.files += 1
                 self.stats.bytes += freed
+            self._tick()
 
     def _subdirectory(self, parent: int, entry: _Entry, where: str) -> None:
         path = f"{where}\\{entry.name}"
@@ -393,6 +414,7 @@ def delete_tree(
     backup_intent: bool = False,
     keep_root: bool = False,
     spare: tuple[str, ...] = (),
+    progress: Callable[[DeleteStats], None] | None = None,
 ) -> DeleteStats:
     """Delete ``root`` and everything under it, never following a link.
 
@@ -402,6 +424,9 @@ def delete_tree(
         keep_root: Empty the directory but leave it in place.
         spare: Names of direct children to keep (case-insensitive). Filtered
             from the root's own enumeration, so a kept name is never opened.
+        progress: Called on the deleting thread with the running totals every
+            quarter of a second, and once more at the end. It receives the
+            live object: read it, do not keep or change it.
 
     Raises:
         TreeDeleteError: ``root`` is a reparse point or not a directory.
@@ -411,7 +436,7 @@ def delete_tree(
         raise OSError("handle-based tree deletion is Windows-only")
     with _privileges(backup_intent):
         handle = _open_root(root, backup_intent, delete=not keep_root)
-        walker = _Walker(backup_intent, measure_only=False)
+        walker = _Walker(backup_intent, measure_only=False, progress=progress)
         try:
             walker.directory(handle, str(root), frozenset(n.lower() for n in spare))
             if not keep_root:
@@ -423,6 +448,8 @@ def delete_tree(
         finally:
             walker.close()
             _k32.CloseHandle(handle)
+        if progress is not None:
+            progress(walker.stats)
         return walker.stats
 
 

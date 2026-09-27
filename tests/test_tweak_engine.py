@@ -579,3 +579,59 @@ def test_preview_selection_keeps_the_score_and_run(db: Database) -> None:
     assert narrowed.change_count == 0 and not narrowed.has_changes
     assert narrowed.plan.run_id == plan.run_id
     assert narrowed.score_before.value == 70.0
+
+
+# -- progress --------------------------------------------------------------
+
+
+class _ReportingTweak(FakeTweak):
+    """Reports half-way through apply, as a long change does."""
+
+    def apply(self, ctx: TweakContext, state: TweakState) -> ApplyResult:
+        ctx.report_progress(0.5, "полпути")
+        return super().apply(ctx, state)
+
+
+def test_progress_names_each_applied_change_and_forwards_its_fraction(
+    db: Database, admin: None
+) -> None:
+    engine = TweakEngine(db)
+    events: list = []
+    plan = engine.plan([FakeTweak(needs_change=False), _ReportingTweak()])
+
+    engine.apply(plan, progress=events.append)
+
+    # The change with nothing to do is not a step; the one that runs is 1 of 1.
+    assert [(e.text, e.fraction) for e in events] == [
+        ("Применение 1 из 1: Fake tweak", None),
+        ("Применение 1 из 1: Fake tweak — полпути", 0.5),
+    ]
+
+
+def test_a_failing_progress_report_does_not_break_the_change(
+    db: Database, admin: None
+) -> None:
+    def gone(_event: object) -> None:
+        raise RuntimeError("the window is already closed")
+
+    engine = TweakEngine(db)
+    tweak = _ReportingTweak()
+    run = engine.apply(engine.plan([tweak]), progress=gone)
+
+    assert run.applied == 1
+    assert tweak.calls[-1] == "verify"
+
+
+def test_the_context_stops_reporting_once_the_run_ends(
+    db: Database, admin: None
+) -> None:
+    engine = TweakEngine(db)
+    engine.apply(engine.plan([_ReportingTweak()]), progress=lambda _event: None)
+    assert engine.context.progress is None
+
+
+def test_a_tweak_may_report_outside_a_run(db: Database, admin: None) -> None:
+    """``report_progress`` without a listener is a no-op, not an error."""
+    tweak = _ReportingTweak()
+    state = tweak.scan(TweakContext())
+    assert tweak.apply(TweakContext(), state).outcome is Outcome.SUCCESS

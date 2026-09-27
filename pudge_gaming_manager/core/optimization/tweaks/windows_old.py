@@ -19,6 +19,7 @@ administrator rights, because the folder holds files owned by
 from __future__ import annotations
 
 from ....utilities.formatting import format_size
+from ....utilities.tree_delete import DeleteStats
 from ....windows.cleanup import windows_old
 from ..tweak import (
     ApplyResult,
@@ -54,12 +55,18 @@ class RemoveWindowsOldTweak(Tweak):
     scope = BackupScope.NONE
     requires_admin = True
 
+    def __init__(self) -> None:
+        super().__init__()
+        # Measured at scan, so apply can show "N of M" instead of a figure
+        # with nothing to compare it to.
+        self._size: int | None = None
+
     def scan(self, ctx: TweakContext) -> TweakState:
         if not windows_old.is_windows_11():
             return TweakState(needs_change=False, summary="Не Windows 11")
         if not windows_old.is_present():
             return TweakState(needs_change=False, summary="Папки windows.old нет")
-        size = windows_old.folder_size()
+        size = self._size = windows_old.folder_size()
         freed = f" ({format_size(size)})" if size else ""
         return TweakState(
             current_value="present",
@@ -80,7 +87,9 @@ class RemoveWindowsOldTweak(Tweak):
     def apply(self, ctx: TweakContext, state: TweakState) -> ApplyResult:
         if ctx.dry_run:
             return ApplyResult(Outcome.SUCCESS, "Пробный прогон: папка не удалена.")
-        stats = windows_old.remove()
+        stats = windows_old.remove(
+            progress=lambda running: self._report(ctx, running)
+        )
         if stats is None:
             return ApplyResult(
                 Outcome.FAILED,
@@ -96,6 +105,18 @@ class RemoveWindowsOldTweak(Tweak):
                 + "; ".join(stats.errors[:3]),
             )
         return ApplyResult(Outcome.SUCCESS, f"Папка windows.old удалена: {freed}.")
+
+    def _report(self, ctx: TweakContext, running: DeleteStats) -> None:
+        """Freed so far, against the size the scan measured."""
+        total = self._size
+        if not total:
+            ctx.report_progress(None, f"удалено {format_size(running.bytes)}")
+            return
+        # Files can grow between scan and delete; the bar never passes 100%.
+        ctx.report_progress(
+            min(running.bytes / total, 1.0),
+            f"удалено {format_size(running.bytes)} из {format_size(total)}",
+        )
 
     def verify(self, ctx: TweakContext, state: TweakState) -> Verification:
         if windows_old.is_present():

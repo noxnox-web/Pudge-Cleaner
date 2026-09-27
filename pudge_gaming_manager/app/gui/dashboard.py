@@ -40,13 +40,13 @@ from ..controllers.system_controller import SystemController
 from ..controllers.tools_controller import ToolsController
 from . import presenters, theme, widgets
 from .dashboard_actions import ProfileAndGamesActions
+from .optimize_actions import OptimizeActions
 from .system_actions import SystemActions
-from .preview_dialog import PreviewDialog, ResultDialog
 from .resources import logo_path
 from .widgets import MetricRow
 
 
-class Dashboard(ProfileAndGamesActions, SystemActions, QMainWindow):
+class Dashboard(ProfileAndGamesActions, SystemActions, OptimizeActions, QMainWindow):
     """Administrator dashboard."""
 
     def __init__(self) -> None:
@@ -81,6 +81,7 @@ class Dashboard(ProfileAndGamesActions, SystemActions, QMainWindow):
         self._controller.failed.connect(self._on_scan_failed)
 
         self._optimizer.preview_ready.connect(self._on_preview_ready)
+        self._optimizer.apply_progress.connect(self._on_apply_progress)
         self._optimizer.apply_finished.connect(self._on_optimize_finished)
         self._optimizer.failed.connect(self._on_optimize_failed)
 
@@ -157,6 +158,13 @@ class Dashboard(ProfileAndGamesActions, SystemActions, QMainWindow):
         self._status.setAlignment(Qt.AlignmentFlag.AlignRight)
         right.addWidget(self._state)
         right.addWidget(self._status)
+        # Shown only while OPTIMIZE writes: filled when the running change
+        # can say how far it is (windows.old takes minutes), busy otherwise.
+        self._work = QProgressBar()
+        self._work.setTextVisible(False)
+        self._work.setFixedWidth(280)
+        self._work.hide()
+        right.addWidget(self._work, alignment=Qt.AlignmentFlag.AlignRight)
         self._set_state("СКАНИРОВАНИЕ", None)
 
         # Rescan sits with the scan state it refreshes, not among the tools.
@@ -270,6 +278,10 @@ class Dashboard(ProfileAndGamesActions, SystemActions, QMainWindow):
         self._progress.setTextVisible(False)
         layout.addWidget(self._progress)
         layout.addSpacing(10)
+        # The level is chosen here, before planning, so the first plan
+        # already holds what the operator wants to review.
+        layout.addLayout(self._build_level_toggle())
+        layout.addSpacing(8)
 
         buttons = QHBoxLayout()
         self._optimize = QPushButton("Оптимизировать ПК")
@@ -381,65 +393,6 @@ class Dashboard(ProfileAndGamesActions, SystemActions, QMainWindow):
             "Это диагностический показатель, а не прогноз FPS. Рост "
             "оценки сам по себе не доказывает прирост производительности.",
         )
-
-    def _on_optimize(self) -> None:
-        """Build the preview. Nothing is changed until it is accepted."""
-        if self._result is None or self._optimizer.busy:
-            return
-        self._optimize.setEnabled(False)
-        self._rescan.setEnabled(False)
-        self._status.setText("Планирование изменений…")
-        self._optimizer.start_preview(self._result.snapshot, self._result.issues)
-
-    def _on_preview_ready(self, preview: object) -> None:
-        """Show the plan and ask for confirmation (rule #39)."""
-        self._status.setText("")
-        self._rescan.setEnabled(True)
-        self._optimize.setEnabled(True)
-
-        dialog = PreviewDialog(  # type: ignore[arg-type]
-            preview, self, snapshot=self._result.snapshot if self._result else None
-        )
-        outcome = dialog.exec()
-        if outcome == PreviewDialog.SHOW_MEDIUM:
-            # The operator asked to see the changes the risk gate holds
-            # back. Re-plan rather than unlock the rows in place: the gate
-            # is part of planning, and a plan that says it was built
-            # without MEDIUM must not quietly start containing it.
-            self._status.setText("Планирование изменений…")
-            self._optimize.setEnabled(False)
-            self._optimizer.start_preview(
-                self._result.snapshot, self._result.issues, allow_medium=True
-            )
-            return
-        if outcome != PreviewDialog.DialogCode.Accepted:
-            return
-        preview = dialog.selected_preview()  # only what the operator ticked
-
-        self._optimize.setEnabled(False)
-        self._rescan.setEnabled(False)
-        self._set_state("ОПТИМИЗАЦИЯ", None)
-        self._status.setText("Применение изменений…")
-        self._optimizer.start_apply(preview)  # type: ignore[arg-type]
-
-    def _on_optimize_finished(self, outcome: object) -> None:
-        self._status.setText("")
-        self._rescan.setEnabled(True)
-        ResultDialog(outcome, self).exec()  # type: ignore[arg-type]
-        # The machine changed, so the dashboard must re-measure rather than
-        # keep showing the state that justified the changes. A refresh, not
-        # a scan: the pipeline has just taken the after-state reading for
-        # its own report, and repeating the two PowerShell calls to learn
-        # which CPU is installed and what the ping is would add four
-        # seconds to an operation that has already finished.
-        self._controller.refresh()
-
-    def _on_optimize_failed(self, message: str) -> None:
-        self._status.setText("")
-        self._rescan.setEnabled(True)
-        self._optimize.setEnabled(True)
-        self._set_state("ТРЕБУЕТСЯ ДЕЙСТВИЕ", theme.WARNING)
-        QMessageBox.warning(self, "Сбой оптимизации", message)
 
     def closeEvent(self, event) -> None:  # noqa: N802 - Qt naming
         # A write in progress must not be interrupted: applying a tweak or

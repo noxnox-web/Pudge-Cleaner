@@ -53,7 +53,9 @@ Enforced by `TweakEngine`, not by individual tweaks:
 - **Success means "changed and verified"** — never "performance improved".
   Performance is measured separately by the benchmark subsystem (rule #65).
 - **Risk gating.** `SAFE` and `LOW` may auto-apply. `MEDIUM` and above require
-  administrator rights *and* explicit opt-in. `CRITICAL` is never auto-applied.
+  administrator rights *and* explicit opt-in: the optimization mode on the main
+  window, «Обычная» by default and never remembered between launches.
+  `CRITICAL` is never auto-applied.
 - **Dry run always available**, and always shown before anything mutates. The
   operator can untick any planned change; unticked changes are skipped.
 - **No stale plans.** Just before applying, each tweak re-reads the system. If
@@ -157,7 +159,7 @@ platform plugin, the one club PCs use.
 | Load recording | Samples CPU (total and busiest core), RAM, and on NVIDIA GPU load, temperature, power, clock and throttle reasons while someone plays. It does **not** measure FPS or frame time — that needs ETW present events — and says so instead of estimating |
 | Application removal | Xbox apps, Widgets, consumer Teams, OneDrive and a named list of preinstalled Store apps. Three guards, because this is the one thing the program cannot undo: an explicit catalogue with no pattern matching, `System`-signed packages refused as OS components, and every deliberate omission recorded with its reason — `Microsoft.XboxIdentityProvider` above all, because removing it breaks Game Pass, Minecraft, Forza and Xbox-Live Steam titles on the machine the tool exists to make better at games |
 | Experimental: blocking dota2.com | Adds `dota2.com` and `www.dota2.com` to a PGM-owned block in the hosts file, on one unreplicated report in Valve's tracker ([Dota2-Gameplay #35438](https://github.com/ValveSoftware/Dota2-Gameplay/issues/35438)) that it stops Dota 2's frame rate decaying across a long session. No documented mechanism, no reproduction, no Valve response, and an unruled-out confound — applying it means restarting the client, so every "blocked" measurement began on a fresh process. MEDIUM and unticked; the rationale states the evidence and that the in-client news, event and store panels stop loading. The block is delimited, so other tools' entries are never touched and removal restores the file byte for byte |
-| MEDIUM opt-in | MEDIUM tweaks used to be dropped by the risk gate before the operator saw them — present in the code, absent from the product. The preview now shows how many are held back and offers to re-plan with that class allowed; they then arrive **unticked**, so allowing the class and choosing the change stay two separate acts |
+| Optimization mode | MEDIUM tweaks used to be dropped by the risk gate before the operator saw them, and later could only be reached by re-planning from the preview. The mode is now a three-way switch above OPTIMIZE, chosen before planning: «Обычная» plans SAFE and LOW only; «Средняя» plans MEDIUM too but delivers it **unticked**, so allowing the class and choosing a change stay two separate acts; «Жёсткая» delivers every row ticked, irreversible removals included — choosing that mode is the operator's choice of the whole class, the hint under the switch says so in the warning colour, and the preview still names every row and lets any of them be unticked. Every session starts at «Обычная» |
 | Cleanup performance | A full pass over 20 000 files went from 43 s to under 5 s, and the delete step alone from 2.4 s to 1.0 s once files were opened with `DELETE` and `READ_ATTRIBUTES` only: asking for read access, as before, made Defender scan each file on open before deleting it (818 µs against 87 µs per file). The delete-time gate resolves each parent directory once instead of each file, categories are scanned in parallel, deletions are overlapped across eight threads, and `verify` reads free space instead of walking the tree a second time. The largest single win was replacing `pathlib.is_relative_to`, which builds and compares every ancestor Path on this Python — 15 us per call, several calls per file |
 | Disk usage survey | Read-only. Reports the largest folders at a fixed depth under the profile, ProgramData, both Program Files and Windows, with a per-root time budget and an explicit "partial" flag. Deletes nothing: it exists to answer what the cleaner's allowlist deliberately says nothing about |
 | Startup manager | Lists `Run`/`RunOnce` entries (HKCU, HKLM, 32-bit view) and both Startup folders with their enabled state, and toggles them through the `StartupApproved` flag Task Manager writes. Nothing is deleted, the change is reversible, and the state is read back from the registry rather than assumed. PGM never writes to a `Run` key — the allowlist still refuses them |
@@ -170,7 +172,7 @@ platform plugin, the one club PCs use.
 | Issue detection | Findings carry severity, remedy and threshold provenance |
 | Dashboard GUI | PySide6 dark theme; scan, optimize, profile, cleanup and Steam-reset work run on worker threads; score explainer; one primary action (**Оптимизировать ПК**) with every other tool grouped beside the metrics (Диагностика / Настройка / Профиль клуба / Очистка). Lime accent from the club logo, text contrast ≥ 4.5:1, a keyboard-only focus ring, fits a 1024 px-wide screen. A write in progress (apply, wipe or cleanup) blocks the window from closing |
 
-**774 tests passing**, plus one opt-in live test that changes and restores
+**797 tests passing**, plus one opt-in live test that changes and restores
 the active power plan (`PGM_LIVE_SYSTEM_TESTS=1`).
 
 ### Running it
@@ -196,7 +198,8 @@ they are chosen by a person in «Настройки Windows».
 
 The removals are the only tweaks that cannot be undone, so each is marked
 НЕОБРАТИМО on its own row in the preview, each is MEDIUM — held behind the
-opt-in and arriving unticked — and none of them matches by pattern. Nothing
+optimization mode, and arriving unticked unless «Жёсткая» was chosen — and
+none of them matches by pattern. Nothing
 is removed that is not named in `windows/apps/catalogue.py`, no `System`-
 signed package is removed at all, and every name deliberately left out is
 recorded there with the reason.

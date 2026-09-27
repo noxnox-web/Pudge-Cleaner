@@ -14,7 +14,7 @@ import uuid
 from abc import ABC, abstractmethod
 from dataclasses import dataclass, field
 from enum import Enum
-from typing import Any
+from typing import Any, Callable
 
 
 #: The one drift result the engine treats as "nothing to do" rather than
@@ -195,6 +195,17 @@ class TweakContext:
     dry_run: bool = False
     run_id: str = ""
     extras: dict[str, Any] = field(default_factory=dict)
+    progress: Callable[[float | None, str], None] | None = None
+    """Set by the engine while a change is being applied; see ``report_progress``."""
+
+    def report_progress(self, fraction: float | None, detail: str = "") -> None:
+        """Tell the operator how far a long ``apply`` has got.
+
+        ``fraction`` is 0..1 of this change, or ``None`` when it cannot tell.
+        A no-op outside a run, so a tweak may call it unconditionally.
+        """
+        if self.progress is not None:
+            self.progress(fraction, detail)
 
 
 class Tweak(ABC):

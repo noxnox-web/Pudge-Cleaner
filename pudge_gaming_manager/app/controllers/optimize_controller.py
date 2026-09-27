@@ -11,6 +11,7 @@ from __future__ import annotations
 from PySide6.QtCore import QObject, Signal
 
 from ...core.optimization.pipeline import (
+    OptimizationLevel,
     OptimizationOutcome,
     OptimizationPipeline,
     OptimizationPreview,
@@ -27,6 +28,11 @@ class OptimizeController(QObject):
     preview_started = Signal()
     preview_ready = Signal(object)
     apply_started = Signal()
+    apply_progress = Signal(object)
+    """Emits :class:`ApplyProgress` from the worker thread while applying.
+
+    Connect it to a method of a UI object, so Qt delivers it queued on the
+    UI thread (see ``background.py``)."""
     apply_finished = Signal(object)
     failed = Signal(str)
 
@@ -67,13 +73,11 @@ class OptimizeController(QObject):
         snapshot: HardwareSnapshot,
         issues: tuple[Issue, ...],
         *,
-        allow_medium: bool = False,
+        level: OptimizationLevel = OptimizationLevel.NORMAL,
     ) -> None:
-        """Plan a run. ``allow_medium`` re-plans including MEDIUM changes."""
+        """Plan a run at the level the operator chose on the main window."""
         if self._runner.start(
-            lambda: self._pipeline.preview(
-                snapshot, issues, allow_risk_above_low=allow_medium
-            ),
+            lambda: self._pipeline.preview(snapshot, issues, level=level),
             self.preview_ready.emit,
         ):
             self.preview_started.emit()
@@ -88,6 +92,7 @@ class OptimizeController(QObject):
             lambda: self._pipeline.apply(
                 preview,
                 rescan=lambda: self._scanner.scan(reuse_inventory=True),
+                progress=self.apply_progress.emit,
             ),
             self._on_applied,
         ):
@@ -108,4 +113,9 @@ class OptimizeController(QObject):
         self._runner.shutdown()
 
 
-__all__ = ["OptimizeController", "OptimizationPreview", "OptimizationOutcome"]
+__all__ = [
+    "OptimizeController",
+    "OptimizationLevel",
+    "OptimizationPreview",
+    "OptimizationOutcome",
+]

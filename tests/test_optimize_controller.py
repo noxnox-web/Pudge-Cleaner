@@ -39,10 +39,11 @@ class _FakePipeline:
         self.release = threading.Event()
         self.applied = False
 
-    def preview(self, _snapshot, _issues):
+    def preview(self, _snapshot, _issues, level=None):
+        self.level = level
         return "preview"
 
-    def apply(self, _preview, *, rescan=None, dry_run=False):
+    def apply(self, _preview, *, rescan=None, dry_run=False, progress=None):
         self.release.wait(5)
         self.applied = True
         return "outcome"
@@ -84,7 +85,7 @@ def test_applying_is_true_during_apply_and_clears_after(app) -> None:
 
 def test_applying_clears_when_apply_fails(app) -> None:
     class _Boom(_FakePipeline):
-        def apply(self, _preview, *, rescan=None, dry_run=False):
+        def apply(self, _preview, *, rescan=None, dry_run=False, progress=None):
             raise RuntimeError("powercfg vanished")
 
     controller = _controller(_Boom())
@@ -129,3 +130,37 @@ def test_close_event_ignores_the_event_while_applying(app, monkeypatch) -> None:
     pipeline.release.set()
     _wait(lambda: not controller.applying)
     controller.shutdown()
+
+
+def test_apply_progress_reaches_the_window_from_the_worker(app) -> None:
+    class _Reporting(_FakePipeline):
+        def apply(self, _preview, *, rescan=None, dry_run=False, progress=None):
+            progress("half-way")
+            return "outcome"
+
+    controller = _controller(_Reporting())
+    seen: list = []
+    done: list = []
+    controller.apply_progress.connect(seen.append)
+    controller.apply_finished.connect(done.append)
+
+    controller.start_apply("preview")  # type: ignore[arg-type]
+    _wait(lambda: done)
+    assert seen == ["half-way"]
+
+
+def test_the_work_bar_is_busy_until_a_step_can_tell_how_far_it_is(app) -> None:
+    """Driven through the real method on a stand-in, as the close guard is."""
+    from PySide6.QtWidgets import QProgressBar
+
+    from pudge_gaming_manager.app.gui.dashboard import Dashboard
+
+    stub = type("Stub", (), {"_work": QProgressBar()})()
+    stub._work.hide()
+
+    Dashboard._show_work(stub, None)  # type: ignore[arg-type]
+    assert (stub._work.minimum(), stub._work.maximum()) == (0, 0)  # busy
+    assert not stub._work.isHidden()
+
+    Dashboard._show_work(stub, 0.25)  # type: ignore[arg-type]
+    assert stub._work.maximum() == 1000 and stub._work.value() == 250

@@ -149,6 +149,34 @@ def stylesheet() -> str:
     QPushButton#Secondary:pressed  {{ background-color: {BORDER}; }}
     QPushButton#Secondary:disabled {{ color: {TEXT_FAINT}; border-color: {BORDER}; }}
 
+    /* One choice of several (widgets.Segmented): the chosen one is raised
+       and bold, never accent-filled — the window's one filled button is
+       OPTIMIZE. Middle segments drop their side borders so neighbours share
+       a single divider. */
+    QPushButton#Segment {{
+        background-color: transparent;
+        color: {TEXT_MUTED};
+        border: 1px solid {BORDER};
+        padding: 7px 12px;
+        font-size: 13px;
+    }}
+    QPushButton#Segment[edge="first"] {{
+        border-top-left-radius: 8px;
+        border-bottom-left-radius: 8px;
+    }}
+    QPushButton#Segment[edge="last"] {{
+        border-top-right-radius: 8px;
+        border-bottom-right-radius: 8px;
+    }}
+    QPushButton#Segment[edge="middle"] {{ border-left: none; border-right: none; }}
+    QPushButton#Segment:hover   {{ color: {TEXT}; }}
+    QPushButton#Segment:checked {{
+        background-color: {SURFACE_RAISED};
+        color: {TEXT};
+        font-weight: 700;
+    }}
+    QPushButton#Segment:disabled {{ color: {TEXT_FAINT}; }}
+
     /* Keyboard focus. Qt stops drawing its own focus rectangle once a
        button's border is styled, so without these a Tab press moves focus
        somewhere invisible. The property is set only for focus that arrived
@@ -160,6 +188,7 @@ def stylesheet() -> str:
         border: 2px solid {ACCENT};
         padding: 6px 13px;
     }}
+    QPushButton#Segment[kbfocus="true"] {{ border-color: {ACCENT}; }}
     QCheckBox {{ border: 1px solid transparent; border-radius: 4px; padding: 2px; }}
     QCheckBox[kbfocus="true"],
     QToolButton#Disclosure[kbfocus="true"] {{ border: 1px solid {ACCENT}; }}

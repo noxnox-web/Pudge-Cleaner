@@ -39,6 +39,7 @@ from __future__ import annotations
 import os
 import pathlib
 import sys
+from typing import Callable
 
 from ...utilities import tree_delete
 from ...utilities.logging_setup import get_logger
@@ -95,19 +96,27 @@ def folder_size(path: pathlib.Path | None = None) -> int | None:
         return None
 
 
-def remove(path: pathlib.Path | None = None) -> tree_delete.DeleteStats | None:
+def remove(
+    path: pathlib.Path | None = None,
+    *,
+    progress: Callable[[tree_delete.DeleteStats], None] | None = None,
+) -> tree_delete.DeleteStats | None:
     """Delete ``Windows.old``. Returns what was done; ``None`` if refused.
 
     Refuses a reparse point: a junction planted in place of the folder must
     not redirect an elevated delete. Needs administrator rights, for the
-    backup and restore privileges.
+    backup and restore privileges. ``progress`` receives the running totals
+    (see :func:`...utilities.tree_delete.delete_tree`): a real folder takes
+    minutes, and the operator should see it moving.
     """
     target = path or windows_old_path()
     if not os.path.lexists(target):
         return tree_delete.DeleteStats()
     try:
         # Refuses a link or a non-directory in place of the folder itself.
-        stats = tree_delete.delete_tree(target, backup_intent=True)
+        stats = tree_delete.delete_tree(
+            target, backup_intent=True, progress=progress
+        )
     except OSError as exc:
         _log.warning("windows.old removal refused at %s: %s", target, exc)
         return None

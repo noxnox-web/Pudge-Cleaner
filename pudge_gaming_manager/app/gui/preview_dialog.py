@@ -24,7 +24,11 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
-from ...core.optimization.pipeline import OptimizationOutcome, OptimizationPreview
+from ...core.optimization.pipeline import (
+    OptimizationLevel,
+    OptimizationOutcome,
+    OptimizationPreview,
+)
 from ...core.optimization.tweak import BackupScope
 from . import presenters, theme, widgets
 
@@ -35,17 +39,15 @@ _CHANGE_INDEX = Qt.ItemDataRole.UserRole + 1
 class PreviewDialog(QDialog):
     """Shows planned changes and asks for confirmation.
 
-    MEDIUM and above are not planned by default, so they arrive here as
-    skipped rows. When any of them was skipped *only* for its risk class,
-    a second button offers to re-plan with that class allowed. Closing with
-    :data:`SHOW_MEDIUM` is the dashboard's cue to do so.
-
-    Allowing the class is not the same as choosing the change. After the
-    re-plan those rows are applicable but **unticked**, so approving one
-    still takes a deliberate click (rule #38).
+    What arrives ticked follows the level chosen on the main window
+    (:meth:`OptimizationPreview.ticked_by_default`): at «Средняя» MEDIUM rows
+    are listed unticked, at «Жёсткая» everything is ticked. At «Обычная»
+    MEDIUM is not planned and arrives as skipped rows; when any was skipped
+    *only* for its risk class, a second button offers the «Средняя» plan.
+    Closing with :data:`SHOW_MEDIUM` is the dashboard's cue to switch to it.
     """
 
-    #: Result code meaning "re-plan, this time including MEDIUM".
+    #: Result code meaning "re-plan at «Средняя»".
     SHOW_MEDIUM = QDialog.DialogCode.Accepted + 1
 
     def __init__(
@@ -82,6 +84,11 @@ class PreviewDialog(QDialog):
             + (
                 f" Необратимых: {len(irreversible)} — они выделены цветом."
                 if irreversible
+                else ""
+            )
+            + (
+                " Режим «Жёсткая»: отмечено всё, включая необратимое."
+                if preview.level is OptimizationLevel.HARD
                 else ""
             )
         )
@@ -204,12 +211,11 @@ class PreviewDialog(QDialog):
             item.setFlags(
                 Qt.ItemFlag.ItemIsEnabled | Qt.ItemFlag.ItemIsUserCheckable
             )
-            # SAFE and LOW start ticked; anything above starts unticked.
-            # The operator asked to *see* this class, which is not the same
-            # as asking to apply a particular change in it.
+            # SAFE and LOW start ticked; MEDIUM only at «Жёсткая», where the
+            # operator chose the class before planning.
             item.setCheckState(
                 Qt.CheckState.Checked
-                if change.tweak.risk.auto_applicable
+                if self._preview.ticked_by_default(change)
                 else Qt.CheckState.Unchecked
             )
             item.setData(_CHANGE_INDEX, index)

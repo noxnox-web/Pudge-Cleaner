@@ -2,8 +2,11 @@
 
 from __future__ import annotations
 
-from PySide6.QtCore import QEvent, QObject, Qt
+from typing import Sequence
+
+from PySide6.QtCore import QEvent, QObject, Qt, Signal
 from PySide6.QtWidgets import (
+    QButtonGroup,
     QFrame,
     QGridLayout,
     QHBoxLayout,
@@ -166,6 +169,48 @@ def grouped_actions(
         grid.addLayout(box, 0, column)
         grid.setColumnStretch(column, 1)
     return frame
+
+
+class Segmented(QWidget):
+    """A row of mutually exclusive choices with exactly one always selected.
+
+    Each option is a checkable button in one exclusive group, so it is
+    reachable by Tab and Space like any other button. ``changed`` fires on
+    the operator's click only, never on :meth:`set_value`.
+    """
+
+    changed = Signal(object)
+
+    def __init__(self, options: Sequence[tuple[str, object]], selected: object) -> None:
+        super().__init__()
+        row = QHBoxLayout(self)
+        row.setContentsMargins(0, 0, 0, 0)
+        row.setSpacing(0)
+        self._values = [value for _, value in options]
+        self._group = QButtonGroup(self)
+        self._group.setExclusive(True)
+        last = len(options) - 1
+        for index, (text, _) in enumerate(options):
+            button = QPushButton(text)
+            button.setObjectName("Segment")
+            button.setCheckable(True)
+            # The stylesheet rounds only the outer corners of the row.
+            button.setProperty(
+                "edge", "first" if index == 0 else "last" if index == last else "middle"
+            )
+            self._group.addButton(button, index)
+            row.addWidget(button, stretch=1)
+        self._group.idClicked.connect(self._clicked)
+        self.set_value(selected)
+
+    def value(self) -> object:
+        return self._values[self._group.checkedId()]
+
+    def set_value(self, value: object) -> None:
+        self._group.button(self._values.index(value)).setChecked(True)
+
+    def _clicked(self, index: int) -> None:
+        self.changed.emit(self._values[index])
 
 
 class Disclosure(QWidget):

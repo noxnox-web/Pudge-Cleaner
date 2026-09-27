@@ -16,6 +16,7 @@ from pudge_gaming_manager.core.optimization.tweak import Outcome, TweakContext
 from pudge_gaming_manager.core.optimization.tweaks.windows_old import (
     RemoveWindowsOldTweak,
 )
+from pudge_gaming_manager.utilities.formatting import format_size
 from pudge_gaming_manager.windows.cleanup import windows_old
 
 windows_only = pytest.mark.skipif(os.name != "nt", reason="Windows-only behaviour")
@@ -72,6 +73,34 @@ def test_apply_removes_the_tree_without_rewriting_permissions(tmp_path, monkeypa
     assert tweak.verify(TweakContext(), tweak.scan(TweakContext())).confirmed
 
 
+def test_apply_reports_progress_against_the_scanned_size(tmp_path, monkeypatch) -> None:
+    monkeypatch.setattr(windows_old, "is_windows_11", lambda: True)
+    _fake_old(tmp_path, monkeypatch)
+    tweak = RemoveWindowsOldTweak()
+    state = tweak.scan(TweakContext())
+    reports: list = []
+    ctx = TweakContext(progress=lambda fraction, detail: reports.append((fraction, detail)))
+
+    assert tweak.apply(ctx, state).outcome is Outcome.SUCCESS
+
+    # The delete always ends with a report of its final totals.
+    size = format_size(2048)
+    assert reports[-1] == (1.0, f"удалено {size} из {size}")
+
+
+def test_progress_without_a_measured_size_has_no_fraction(tmp_path, monkeypatch) -> None:
+    monkeypatch.setattr(windows_old, "is_windows_11", lambda: True)
+    _fake_old(tmp_path, monkeypatch)
+    monkeypatch.setattr(windows_old, "folder_size", lambda: None)
+    tweak = RemoveWindowsOldTweak()
+    state = tweak.scan(TweakContext())
+    reports: list = []
+    ctx = TweakContext(progress=lambda fraction, detail: reports.append((fraction, detail)))
+
+    assert tweak.apply(ctx, state).outcome is Outcome.SUCCESS
+    assert reports[-1] == (None, f"удалено {format_size(2048)}")
+
+
 def test_the_size_is_read_by_handle(tmp_path, monkeypatch) -> None:
     _fake_old(tmp_path, monkeypatch)
     assert windows_old.folder_size() == 2048
@@ -93,7 +122,9 @@ def test_files_left_behind_are_a_failure_not_a_success(tmp_path, monkeypatch) ->
     _fake_old(tmp_path, monkeypatch)
     monkeypatch.setattr(
         windows_old, "remove",
-        lambda path=None: DeleteStats(bytes=10, files=1, failed=2, errors=["x: занят"]),
+        lambda path=None, progress=None: DeleteStats(
+            bytes=10, files=1, failed=2, errors=["x: занят"]
+        ),
     )
     tweak = RemoveWindowsOldTweak()
     result = tweak.apply(TweakContext(), tweak.scan(TweakContext()))

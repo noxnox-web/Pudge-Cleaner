@@ -10,7 +10,10 @@ from __future__ import annotations
 
 import pytest
 
-from pudge_gaming_manager.core.optimization.pipeline import OptimizationPipeline
+from pudge_gaming_manager.core.optimization.pipeline import (
+    OptimizationLevel,
+    OptimizationPipeline,
+)
 from pudge_gaming_manager.core.optimization.tweak import RiskLevel
 from pudge_gaming_manager.core.optimization.tweaks.cleanup import (
     CleanTemporaryFilesTweak,
@@ -180,7 +183,7 @@ def test_the_opt_in_makes_medium_applicable(
         pytest.skip("nothing MEDIUM needs changing on this machine")
 
     opened = pipeline.preview(
-        _snapshot(disks=(_roomy_disk(),)), allow_risk_above_low=True
+        _snapshot(disks=(_roomy_disk(),)), level=OptimizationLevel.MEDIUM
     )
 
     assert not opened.plan.blocked_by_risk
@@ -193,7 +196,7 @@ def test_the_opt_in_never_reaches_critical(
 ) -> None:
     """CRITICAL is defined as "could leave the machine unusable"."""
     for change in pipeline.preview(
-        _snapshot(disks=(_roomy_disk(),)), allow_risk_above_low=True
+        _snapshot(disks=(_roomy_disk(),)), level=OptimizationLevel.MEDIUM
     ).plan.changes:
         assert change.tweak.risk is not RiskLevel.CRITICAL
 

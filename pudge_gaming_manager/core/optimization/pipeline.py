@@ -20,6 +20,7 @@ is the kind of speculative tweak rule #64 forbids.
 from __future__ import annotations
 
 from dataclasses import dataclass, field
+from enum import Enum
 from typing import Callable
 
 from ...database.connection import Database
@@ -30,7 +31,8 @@ from ...windows.cleanup.rules import CleanupCategory
 from ..diagnostics.issues import Issue
 from ..scoring.score import GamingScore, compute_score
 from ..settings.catalog import Tier, by_tier
-from .engine import Plan, RunReport, TweakEngine
+from .engine import Plan, PlannedChange, RunReport, TweakEngine
+from .progress import ApplyProgress, ProgressCallback, guarded_progress
 from .tweak import Tweak, TweakContext
 from .tweaks.apps import app_tweaks
 from .tweaks.choice import tweak_for
@@ -50,15 +52,52 @@ from .tweaks.windows_old import RemoveWindowsOldTweak
 _log = get_logger(__name__)
 
 
+class OptimizationLevel(str, Enum):
+    """How far one OPTIMIZE run goes, chosen on the main window before planning.
+
+    The preview is shown at every level and any row can be unticked there;
+    the level decides what the plan contains and what arrives ticked.
+    """
+
+    NORMAL = "NORMAL"
+    """SAFE and LOW only. MEDIUM stays behind the risk gate, listed as skipped."""
+
+    MEDIUM = "MEDIUM"
+    """MEDIUM is planned too, but arrives unticked: allowing the class and
+    choosing a change in it stay two separate acts (rule #38)."""
+
+    HARD = "HARD"
+    """MEDIUM is planned and arrives ticked, irreversible removals included.
+    Choosing this level on the main window is the operator's choice of the
+    class; the preview still names every row and marks the irreversible ones."""
+
+    @property
+    def allows_risk_above_low(self) -> bool:
+        return self is not OptimizationLevel.NORMAL
+
+
 @dataclass(frozen=True, slots=True)
 class OptimizationPreview:
     """What the operator confirms before anything is changed."""
 
     plan: Plan
     score_before: GamingScore
-    allow_risk_above_low: bool = False
-    """What this plan was built under, so the dialog can say whether the
-    opt-in is still available and ``with_selection`` cannot lose it."""
+    level: OptimizationLevel = OptimizationLevel.NORMAL
+    """What this plan was built under, so the dialog knows what to tick and
+    whether the opt-in is still available, and ``with_selection`` cannot
+    lose it."""
+
+    @property
+    def allow_risk_above_low(self) -> bool:
+        return self.level.allows_risk_above_low
+
+    def ticked_by_default(self, change: PlannedChange) -> bool:
+        """Whether an applicable change starts ticked in the preview.
+
+        SAFE and LOW always do. Anything above does only at HARD, where the
+        operator chose the whole class before planning.
+        """
+        return change.tweak.risk.auto_applicable or self.level is OptimizationLevel.HARD
 
     @property
     def change_count(self) -> int:
@@ -76,7 +115,7 @@ class OptimizationPreview:
         return OptimizationPreview(
             plan=self.plan.with_selection(selected),
             score_before=self.score_before,
-            allow_risk_above_low=self.allow_risk_above_low,
+            level=self.level,
         )
 
 
@@ -247,7 +286,7 @@ class OptimizationPipeline:
         issues: tuple[Issue, ...] = (),
         score_before: GamingScore | None = None,
         *,
-        allow_risk_above_low: bool | None = None,
+        level: OptimizationLevel | None = None,
     ) -> OptimizationPreview:
         """Produce the dry-run preview. Changes nothing.
 
@@ -255,25 +294,24 @@ class OptimizationPipeline:
         this exact list before the pipeline touches anything.
 
         Args:
-            allow_risk_above_low: Overrides the pipeline's default for this
-                plan only. The GUI passes ``True`` after the operator has
-                asked to see MEDIUM changes; they then still arrive
-                unticked, so allowing the class and choosing the change
-                remain two separate acts (rule #38).
+            level: What the operator chose on the main window, for this plan
+                only. ``None`` keeps the pipeline's own default, which never
+                goes past NORMAL unless the pipeline was built to allow MEDIUM.
         """
-        allow = (
-            self.allow_risk_above_low
-            if allow_risk_above_low is None
-            else allow_risk_above_low
-        )
-        engine = self._engine(allow_risk_above_low=allow)
+        if level is None:
+            level = (
+                OptimizationLevel.MEDIUM
+                if self.allow_risk_above_low
+                else OptimizationLevel.NORMAL
+            )
+        engine = self._engine(allow_risk_above_low=level.allows_risk_above_low)
         tweaks = self.build_tweaks(snapshot, issues)
         engine.register(tweaks)
         plan = engine.plan(tweaks)
         return OptimizationPreview(
             plan=plan,
             score_before=score_before or compute_score(snapshot),
-            allow_risk_above_low=allow,
+            level=level,
         )
 
     def apply(
@@ -282,6 +320,7 @@ class OptimizationPipeline:
         *,
         dry_run: bool = False,
         rescan: object | None = None,
+        progress: ProgressCallback | None = None,
     ) -> OptimizationOutcome:
         """Execute an approved preview.
 
@@ -289,6 +328,9 @@ class OptimizationPipeline:
             rescan: A callable returning a fresh :class:`HardwareSnapshot`,
                 used to measure the after-state. Injected rather than
                 imported so this module does not depend on the scanner.
+            progress: Told which change is running and how far a long one
+                has got (removing ``Windows.old`` takes minutes). Called on
+                the thread that runs this method.
         """
         restore_note = ""
         if not dry_run and self.restore_point is not None and preview.has_changes:
@@ -302,7 +344,7 @@ class OptimizationPipeline:
                 restore_note = f"Точка восстановления не создана: {exc}"
 
         engine = self._engine()
-        run = engine.apply(preview.plan, dry_run=dry_run)
+        run = engine.apply(preview.plan, dry_run=dry_run, progress=progress)
 
         outcome = OptimizationOutcome(run=run, score_before=preview.score_before)
         if restore_note:
@@ -312,6 +354,10 @@ class OptimizationPipeline:
             return outcome
 
         if callable(rescan):
+            if progress is not None:
+                guarded_progress(progress)(
+                    ApplyProgress("Замер состояния после изменений…")
+                )
             try:
                 snapshot_after = rescan()
                 outcome.snapshot_after = snapshot_after

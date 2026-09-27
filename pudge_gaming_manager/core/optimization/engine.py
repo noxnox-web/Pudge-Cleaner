@@ -20,6 +20,7 @@ from ...database.connection import Database
 from ...utilities.exceptions import PgmError
 from ...utilities.logging_setup import get_logger
 from ...utilities.privileges import is_admin
+from .progress import ProgressCallback, guarded_progress, step_reporter
 from .store import RunStore
 from .tweak import (
     ALREADY_DESIRED,
@@ -264,49 +265,68 @@ class TweakEngine:
 
     # -- execution ---------------------------------------------------------
 
-    def apply(self, plan: Plan, *, dry_run: bool = False) -> RunReport:
+    def apply(
+        self,
+        plan: Plan,
+        *,
+        dry_run: bool = False,
+        progress: ProgressCallback | None = None,
+    ) -> RunReport:
         """Execute a plan.
 
         Args:
             dry_run: Report what would happen and mutate nothing.
+            progress: Told which change is running, and how far a long one
+                has got. Called on this (the worker) thread.
         """
         report = RunReport(run_id=plan.run_id, dry_run=dry_run)
         self._store.open_run(
             plan.run_id, dry_run=dry_run, planned=len(plan.applicable)
         )
-
-        for change in plan.changes:
-            if not change.will_apply:
-                report.results.append(
-                    TweakReport(
-                        tweak_id=change.tweak.id,
-                        name=change.tweak.name,
-                        outcome=(
-                            Outcome.NOT_NEEDED
-                            if not change.state.needs_change
-                            else Outcome.SKIPPED
-                        ),
-                        phase=Phase.VALIDATE,
-                        detail=change.skip_reason,
+        send = guarded_progress(progress) if progress is not None else None
+        total, step = len(plan.applicable), 0
+        try:
+            for change in plan.changes:
+                if not change.will_apply:
+                    report.results.append(
+                        TweakReport(
+                            tweak_id=change.tweak.id,
+                            name=change.tweak.name,
+                            outcome=(
+                                Outcome.NOT_NEEDED
+                                if not change.state.needs_change
+                                else Outcome.SKIPPED
+                            ),
+                            phase=Phase.VALIDATE,
+                            detail=change.skip_reason,
+                        )
                     )
-                )
-                continue
+                    continue
 
-            if dry_run:
-                report.results.append(
-                    TweakReport(
-                        tweak_id=change.tweak.id,
-                        name=change.tweak.name,
-                        outcome=Outcome.SKIPPED,
-                        phase=Phase.VALIDATE,
-                        detail="dry run: no changes made",
-                        before=change.state.current_value,
-                        after=change.state.desired_value,
+                if dry_run:
+                    report.results.append(
+                        TweakReport(
+                            tweak_id=change.tweak.id,
+                            name=change.tweak.name,
+                            outcome=Outcome.SKIPPED,
+                            phase=Phase.VALIDATE,
+                            detail="dry run: no changes made",
+                            before=change.state.current_value,
+                            after=change.state.desired_value,
+                        )
                     )
-                )
-                continue
+                    continue
 
-            report.results.append(self._execute(change, plan.run_id))
+                step += 1
+                if send is not None:
+                    self.context.progress = step_reporter(
+                        send, f"Применение {step} из {total}: {change.tweak.name}"
+                    )
+                    self.context.report_progress(None)
+                report.results.append(self._execute(change, plan.run_id))
+        finally:
+            # A tweak's context must not keep reporting into a finished run.
+            self.context.progress = None
 
         self._store.close_run(
             plan.run_id, applied=report.applied, failed=report.failed,
