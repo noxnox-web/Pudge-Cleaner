@@ -32,7 +32,7 @@ from ..diagnostics.issues import Issue
 from ..scoring.score import GamingScore, compute_score
 from ..settings.catalog import Tier, by_tier
 from .engine import Plan, PlannedChange, RunReport, TweakEngine
-from .progress import ApplyProgress, ProgressCallback, guarded_progress
+from ...utilities.progress import Progress, ProgressCallback, guarded
 from .tweak import Tweak, TweakContext
 from .tweaks.apps import app_tweaks
 from .tweaks.choice import tweak_for
@@ -355,8 +355,8 @@ class OptimizationPipeline:
 
         if callable(rescan):
             if progress is not None:
-                guarded_progress(progress)(
-                    ApplyProgress("Замер состояния после изменений…")
+                guarded(progress)(
+                    Progress("Замер состояния после изменений…")
                 )
             try:
                 snapshot_after = rescan()

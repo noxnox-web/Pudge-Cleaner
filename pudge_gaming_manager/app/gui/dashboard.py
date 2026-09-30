@@ -71,6 +71,8 @@ class Dashboard(ProfileAndGamesActions, SystemActions, OptimizeActions, QMainWin
         # Held only while the startup dialog is open, so a toggle's
         # result can be routed back to the row that asked for it.
         self._startup_dialog = None
+        # Likewise the usage dialog, which asks for folder deletes and moves.
+        self._usage_dialog = None
 
         # Widgets must exist before any signal is bound to them.
         self._build()
@@ -81,7 +83,7 @@ class Dashboard(ProfileAndGamesActions, SystemActions, OptimizeActions, QMainWin
         self._controller.failed.connect(self._on_scan_failed)
 
         self._optimizer.preview_ready.connect(self._on_preview_ready)
-        self._optimizer.apply_progress.connect(self._on_apply_progress)
+        self._optimizer.apply_progress.connect(self._on_progress)
         self._optimizer.apply_finished.connect(self._on_optimize_finished)
         self._optimizer.failed.connect(self._on_optimize_failed)
 
@@ -89,15 +91,20 @@ class Dashboard(ProfileAndGamesActions, SystemActions, OptimizeActions, QMainWin
         self._profiles.compared.connect(self._on_profile_compared)
         self._profiles.failed.connect(self._on_profile_failed)
 
+        self._steam.progress.connect(self._on_progress)
         self._steam.planned.connect(self._on_steam_planned)
         self._steam.wiped.connect(self._on_steam_wiped)
         self._steam.failed.connect(self._on_steam_failed)
 
+        self._cleanup.progress.connect(self._on_progress)
         self._cleanup.planned.connect(self._on_cleanup_planned)
         self._cleanup.cleaned.connect(self._on_cleanup_finished)
         self._cleanup.failed.connect(self._on_cleanup_failed)
 
         self._tools.usage_ready.connect(self._on_usage_ready)
+        self._tools.progress.connect(self._on_tools_progress)
+        self._tools.folder_planned.connect(self._on_folder_planned)
+        self._tools.folder_done.connect(self._on_folder_done)
         self._tools.startup_ready.connect(self._on_startup_ready)
         self._tools.startup_toggled.connect(self._on_startup_toggled)
         self._tools.failed.connect(self._on_tools_failed)
@@ -175,6 +182,34 @@ class Dashboard(ProfileAndGamesActions, SystemActions, OptimizeActions, QMainWin
         row.addLayout(right)
         row.addWidget(self._rescan, alignment=Qt.AlignmentFlag.AlignVCenter)
         return row
+
+    # -- the bar under the status line ---------------------------------------
+    # One bar for every long operation: optimize, disk cleanup, the Steam
+    # reset, the usage survey. Filled when the step can say how far it is,
+    # animated (busy) when it cannot.
+
+    def _begin_work(self, text: str) -> None:
+        """Start an operation: its first line, and a busy bar until told more."""
+        self._status.setText(text)
+        self._show_work(None)
+
+    def _on_progress(self, event: object) -> None:
+        """A report from a worker thread (queued onto this one by Qt)."""
+        self._status.setText(event.text)  # type: ignore[attr-defined]
+        self._show_work(event.fraction)  # type: ignore[attr-defined]
+
+    def _show_work(self, fraction: float | None) -> None:
+        if fraction is None:
+            self._work.setRange(0, 0)  # busy: the step cannot tell
+        else:
+            self._work.setRange(0, 1000)
+            self._work.setValue(round(fraction * 1000))
+        self._work.show()
+
+    def _end_work(self) -> None:
+        """Finish an operation: the status line clears and the bar goes away."""
+        self._status.setText("")
+        self._work.hide()
 
     def _set_state(self, text: str, colour: str | None) -> None:
         """Header state. ``None`` is work in progress: muted, not a status."""
@@ -407,6 +442,8 @@ class Dashboard(ProfileAndGamesActions, SystemActions, OptimizeActions, QMainWin
             if self._steam.wiping
             else "Идёт очистка диска."
             if self._cleanup.cleaning
+            else "Идёт удаление или перенос папки."
+            if self._tools.modifying
             else "Применяются или откатываются настройки."
             if self._system.applying
             else None

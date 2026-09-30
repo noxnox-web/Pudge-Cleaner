@@ -25,6 +25,7 @@ import ctypes
 import os
 import pathlib
 from ctypes import wintypes
+from typing import Callable
 
 from . import tree_delete
 
@@ -161,7 +162,11 @@ def _is_reparse_point(entry: os.DirEntry | pathlib.Path) -> bool:
 
 
 def delete_tree(
-    root: pathlib.Path, *, keep_root: bool = False, spare: tuple[str, ...] = ()
+    root: pathlib.Path,
+    *,
+    keep_root: bool = False,
+    spare: tuple[str, ...] = (),
+    progress: Callable[[tree_delete.DeleteStats], None] | None = None,
 ) -> int:
     """Recursively delete a directory and return the bytes reclaimed.
 
@@ -173,12 +178,15 @@ def delete_tree(
     System32 before the elevated delete walked into it.
 
     Files that are locked or denied are left behind, as before; the caller
-    sees them as a folder that still exists.
+    sees them as a folder that still exists. ``progress`` receives the
+    running totals a few times a second (see :func:`.tree_delete.delete_tree`).
 
     Raises:
         DeleteError: the root is a reparse point or not a directory.
     """
     try:
-        return tree_delete.delete_tree(root, keep_root=keep_root, spare=spare).bytes
+        return tree_delete.delete_tree(
+            root, keep_root=keep_root, spare=spare, progress=progress
+        ).bytes
     except tree_delete.TreeDeleteError as exc:
         raise DeleteError(str(exc)) from exc

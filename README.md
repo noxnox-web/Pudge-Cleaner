@@ -161,7 +161,7 @@ platform plugin, the one club PCs use.
 | Experimental: blocking dota2.com | Adds `dota2.com` and `www.dota2.com` to a PGM-owned block in the hosts file, on one unreplicated report in Valve's tracker ([Dota2-Gameplay #35438](https://github.com/ValveSoftware/Dota2-Gameplay/issues/35438)) that it stops Dota 2's frame rate decaying across a long session. No documented mechanism, no reproduction, no Valve response, and an unruled-out confound — applying it means restarting the client, so every "blocked" measurement began on a fresh process. MEDIUM and unticked; the rationale states the evidence and that the in-client news, event and store panels stop loading. The block is delimited, so other tools' entries are never touched and removal restores the file byte for byte |
 | Optimization mode | MEDIUM tweaks used to be dropped by the risk gate before the operator saw them, and later could only be reached by re-planning from the preview. The mode is now a three-way switch above OPTIMIZE, chosen before planning: «Обычная» plans SAFE and LOW only; «Средняя» plans MEDIUM too but delivers it **unticked**, so allowing the class and choosing a change stay two separate acts; «Жёсткая» delivers every row ticked, irreversible removals included — choosing that mode is the operator's choice of the whole class, the hint under the switch says so in the warning colour, and the preview still names every row and lets any of them be unticked. Every session starts at «Обычная» |
 | Cleanup performance | A full pass over 20 000 files went from 43 s to under 5 s, and the delete step alone from 2.4 s to 1.0 s once files were opened with `DELETE` and `READ_ATTRIBUTES` only: asking for read access, as before, made Defender scan each file on open before deleting it (818 µs against 87 µs per file). The delete-time gate resolves each parent directory once instead of each file, categories are scanned in parallel, deletions are overlapped across eight threads, and `verify` reads free space instead of walking the tree a second time. The largest single win was replacing `pathlib.is_relative_to`, which builds and compares every ancestor Path on this Python — 15 us per call, several calls per file |
-| Disk usage survey | Read-only. Reports the largest folders at a fixed depth under the profile, ProgramData, both Program Files and Windows, with a per-root time budget and an explicit "partial" flag. Deletes nothing: it exists to answer what the cleaner's allowlist deliberately says nothing about |
+| Disk usage survey | Reports the largest folders at a fixed depth under the profile, ProgramData, both Program Files and Windows, with a per-root time budget and an explicit "partial" flag. From the list a folder can be **deleted** or **moved to another drive** (below) — the survey itself still deletes nothing: it exists to answer what the cleaner's allowlist deliberately says nothing about |
 | Startup manager | Lists `Run`/`RunOnce` entries (HKCU, HKLM, 32-bit view) and both Startup folders with their enabled state, and toggles them through the `StartupApproved` flag Task Manager writes. Nothing is deleted, the change is reversible, and the state is read back from the registry rather than assumed. PGM never writes to a `Run` key — the allowlist still refuses them |
 | `OptimizationPipeline` | Scan findings -> tweaks -> preview -> apply -> rescan, with a before/after report |
 | `RegistryManager` / `ServiceManager` | Allowlist matched per path segment and per hive; `Services` and `Run` keys deliberately excluded. Type-preserving backups, protected-service list. Not yet used by any tweak |
@@ -170,9 +170,9 @@ platform plugin, the one club PCs use.
 | Steam club reset | As SteamWiper: removes every game except a built-in keep-list of popular titles (edit `games/steam/default_keep.py`; no profile or config file), with a preview whose checkboxes let the operator rescue any game before deletion; clears `downloading`, `temp`, `shadercache`, `workshop` (whole — including kept games' mods/maps) and `sourcemods` in every library, plus `appcache`, `logs`, `dumps`, `userdata`; **signs every account out** — empties `config` (keeping `config.vdf` and `libraryfolders.vdf`) and deletes each Windows user's saved tokens (`local.vdf`) and Steam web cookies (`htmlcache`). Preview-first with sizes and the number of remembered accounts; everything deleted by handle (junction-swap safe); Steam stopped first |
 | Gaming Score | Transparent, weights configurable, unavailable inputs excluded and renormalised |
 | Issue detection | Findings carry severity, remedy and threshold provenance |
-| Dashboard GUI | PySide6 dark theme; scan, optimize, profile, cleanup and Steam-reset work run on worker threads; score explainer; one primary action (**Оптимизировать ПК**) with every other tool grouped beside the metrics (Диагностика / Настройка / Профиль клуба / Очистка). Lime accent from the club logo, text contrast ≥ 4.5:1, a keyboard-only focus ring, fits a 1024 px-wide screen. A write in progress (apply, wipe or cleanup) blocks the window from closing |
+| Dashboard GUI | PySide6 dark theme; scan, optimize, profile, cleanup and Steam-reset work run on worker threads; score explainer; one primary action (**Оптимизировать ПК**) with every other tool grouped beside the metrics (Диагностика / Настройка / Профиль клуба / Очистка). Lime accent from the club logo, text contrast ≥ 4.5:1, a keyboard-only focus ring, fits a 1024 px-wide screen. Optimize, disk cleanup, the Steam reset and the usage survey show one bar under the status line — filled when the step can say how far it is, animated when it cannot. A write in progress (apply, wipe, cleanup, or a folder delete or move) blocks the window from closing |
 
-**797 tests passing**, plus one opt-in live test that changes and restores
+**914 tests passing**, plus one opt-in live test that changes and restores
 the active power plan (`PGM_LIVE_SYSTEM_TESTS=1`).
 
 ### Running it
@@ -222,10 +222,50 @@ cluster rounding make them differ, and when the gap is large the report says
 which of those is the likely cause instead of quietly showing the flattering
 number.
 
-**`Что занимает место…`** is read-only and deletes nothing. The cleaner works
-from an allowlist so it can never remove something nobody listed; the price
-is that it says nothing about the 200 GB in a folder no category names. This
-answers that and leaves the decision to a person.
+**`Что занимает место…`** lists the largest folders. The cleaner works from an
+allowlist so it can never remove something nobody listed; the price is that it
+says nothing about the 200 GB in a folder no category names. This answers
+that, and now lets the operator act on the answer: select a folder, then
+**Удалить** or **Перенести на другой диск**. Both ask first, naming the folder,
+its size and that nothing goes to the Recycle Bin, with Cancel as the default.
+
+What may be touched is decided by `windows/folder_policy.py`, not by the
+cleaner's protected-name table, which is written for unattended cleanup and
+closes Program Files, `Documents` and every launcher — the folders a person
+most wants to move. The policy refuses the Windows folder, the profile and
+Program Files as a whole, Windows and Microsoft components (`WindowsApps`,
+`Common Files`, `ProgramData\Microsoft`, `AppData\...\Microsoft`, `Packages`,
+`Temp`), links, and club software, anti-cheat and credentials. It is a
+denylist, so it is never complete; it covers what cannot be put back.
+
+A move is a copy, a swap and a delete, because there is no atomic move
+between drives:
+
+1. Rename the folder away and back. Anything open inside makes the rename
+   fail (verified on this machine: an open file, another process's working
+   directory and a held directory handle all do), so this finds a folder in
+   use in a moment instead of after copying 100 GB.
+2. Copy with `CopyFileExW`, which keeps attributes, times and alternate data
+   streams and reports bytes as it goes. Paths over 260 characters work. A
+   link anywhere inside stops the move before it starts; an EFS-encrypted file
+   fails rather than being written out decrypted.
+3. Measure the source again and the copy: a program that wrote into the folder
+   meanwhile shows as a difference, and the move is abandoned.
+4. Rename the original aside, make a junction at the old path, delete the
+   renamed original. The junction is written directly with
+   `FSCTL_SET_REPARSE_POINT`; `mklink /J` would pass the path through `cmd`'s
+   parser, which expands `%NAME%` even in quotes.
+
+Until step 4 the original is untouched, and a failure anywhere before it
+removes the partial copy. If the junction cannot be made the original is put
+back; if it cannot be put back, both copies are kept and the message names
+where each is. Files that cannot be deleted afterwards are reported with the
+folder that holds them. Deleting uses the handle-based delete without backup
+privileges, so an ACL that denies the file still counts: denied files are
+reported, not forced. The copy names files by path, not by handle, so
+someone who can write inside the source could swap a folder for a link
+between listing and opening it; each entry is checked as it is reached, and
+the source is deleted by handle.
 
 **`Автозагрузка…`** lists what Windows launches at sign-in and turns entries
 on or off the way Task Manager does — by writing the `StartupApproved` flag,
@@ -328,6 +368,11 @@ been executed in their target environment:
   run live on this machine; the actual deletion is covered by tests against a
   fake Steam tree (including a junction-swap attempt), never the real install.
 
+- Delete and move from the usage dialog, through the buttons. The same code
+  has run live here: a 303 MB, 1 501-file folder moved from `C:` to `D:`
+  (every file identical by SHA-256 when read back through the junction), then
+  deleted, on throwaway data. Clicking through the GUI and moving a real
+  application's folder have not been done.
 - Every Windows 11-specific code path.
 - SmartShell protection — no SmartShell installation exists here. The
   protected-application list is config-driven and untested against the real

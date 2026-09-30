@@ -20,6 +20,12 @@ class SteamController(QObject):
     planned = Signal(object)
     """Emits a :class:`WipePlan`, or ``None`` when Steam is not installed."""
 
+    progress = Signal(object)
+    """Emits :class:`Progress` from the worker thread while games are deleted.
+
+    Connect it to a method of a UI object, so Qt delivers it queued on the
+    UI thread (see ``background.py``)."""
+
     wiped = Signal(object)
     """Emits a :class:`WipeResult`."""
 
@@ -53,7 +59,10 @@ class SteamController(QObject):
         )
 
     def start_wipe(self, plan: WipePlan) -> None:
-        if self._runner.start(lambda: self._wiper.wipe(plan), self._on_wiped):
+        if self._runner.start(
+            lambda: self._wiper.wipe(plan, progress=self.progress.emit),
+            self._on_wiped,
+        ):
             self._wiping = True
 
     def _on_wiped(self, result: object) -> None:

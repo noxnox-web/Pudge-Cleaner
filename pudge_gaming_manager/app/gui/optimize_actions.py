@@ -80,14 +80,14 @@ class OptimizeActions:
     def _plan(self, level: object) -> None:
         self._optimize.setEnabled(False)  # type: ignore[attr-defined]
         self._rescan.setEnabled(False)  # type: ignore[attr-defined]
-        self._status.setText("Планирование изменений…")  # type: ignore[attr-defined]
+        self._begin_work("Планирование изменений…")  # type: ignore[attr-defined]
         self._optimizer.start_preview(  # type: ignore[attr-defined]
             self._result.snapshot, self._result.issues, level=level  # type: ignore[attr-defined]
         )
 
     def _on_preview_ready(self, preview: object) -> None:
         """Show the plan and ask for confirmation (rule #39)."""
-        self._status.setText("")  # type: ignore[attr-defined]
+        self._end_work()  # type: ignore[attr-defined]
         self._rescan.setEnabled(True)  # type: ignore[attr-defined]
         self._optimize.setEnabled(True)  # type: ignore[attr-defined]
 
@@ -112,27 +112,13 @@ class OptimizeActions:
         self._optimize.setEnabled(False)  # type: ignore[attr-defined]
         self._rescan.setEnabled(False)  # type: ignore[attr-defined]
         self._set_state("ОПТИМИЗАЦИЯ", None)  # type: ignore[attr-defined]
-        self._status.setText("Применение изменений…")  # type: ignore[attr-defined]
-        self._show_work(None)
+        self._begin_work("Применение изменений…")  # type: ignore[attr-defined]
         self._optimizer.start_apply(chosen)  # type: ignore[attr-defined]
 
     # -- applying ----------------------------------------------------------
 
-    def _on_apply_progress(self, event: object) -> None:
-        self._status.setText(event.text)  # type: ignore[attr-defined]
-        self._show_work(event.fraction)  # type: ignore[attr-defined]
-
-    def _show_work(self, fraction: float | None) -> None:
-        if fraction is None:
-            self._work.setRange(0, 0)  # type: ignore[attr-defined]  # busy: the step cannot tell
-        else:
-            self._work.setRange(0, 1000)  # type: ignore[attr-defined]
-            self._work.setValue(round(fraction * 1000))  # type: ignore[attr-defined]
-        self._work.show()  # type: ignore[attr-defined]
-
     def _on_optimize_finished(self, outcome: object) -> None:
-        self._status.setText("")  # type: ignore[attr-defined]
-        self._work.hide()  # type: ignore[attr-defined]
+        self._end_work()  # type: ignore[attr-defined]
         self._rescan.setEnabled(True)  # type: ignore[attr-defined]
         ResultDialog(outcome, self).exec()  # type: ignore[arg-type]
         # The machine changed, so the dashboard must re-measure rather than
@@ -144,8 +130,7 @@ class OptimizeActions:
         self._controller.refresh()  # type: ignore[attr-defined]
 
     def _on_optimize_failed(self, message: str) -> None:
-        self._status.setText("")  # type: ignore[attr-defined]
-        self._work.hide()  # type: ignore[attr-defined]
+        self._end_work()  # type: ignore[attr-defined]
         self._rescan.setEnabled(True)  # type: ignore[attr-defined]
         self._optimize.setEnabled(True)  # type: ignore[attr-defined]
         self._set_state("ТРЕБУЕТСЯ ДЕЙСТВИЕ", theme.WARNING)  # type: ignore[attr-defined]

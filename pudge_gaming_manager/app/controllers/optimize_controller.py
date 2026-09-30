@@ -29,7 +29,7 @@ class OptimizeController(QObject):
     preview_ready = Signal(object)
     apply_started = Signal()
     apply_progress = Signal(object)
-    """Emits :class:`ApplyProgress` from the worker thread while applying.
+    """Emits :class:`Progress` from the worker thread while applying.
 
     Connect it to a method of a UI object, so Qt delivers it queued on the
     UI thread (see ``background.py``)."""

@@ -24,8 +24,16 @@ import pathlib
 import time
 from concurrent.futures import ThreadPoolExecutor
 
+from ...utilities.formatting import format_size
 from ...utilities.logging_setup import audit_event, get_logger
 from ...utilities.privileges import is_admin
+from ...utilities.progress import (
+    Progress,
+    ProgressCallback,
+    Throttle,
+    fraction_of,
+    guarded,
+)
 from .report import (
     CategoryReport,
     CleanResult,
@@ -252,9 +260,17 @@ class CleanupEngine:
     # -- clean -------------------------------------------------------------
 
     def clean(
-        self, report: ScanReport, *, dry_run: bool = False
+        self,
+        report: ScanReport,
+        *,
+        dry_run: bool = False,
+        progress: ProgressCallback | None = None,
     ) -> CleanResult:
         """Delete what a scan approved.
+
+        ``progress`` is told which category is being cleaned and what share
+        of the approved items has been dealt with, a few times a second. It
+        is called on this thread.
 
         Every item is re-validated against the same gate the scan used. The
         filesystem can change between scan and clean, and a stale inventory
@@ -268,12 +284,22 @@ class CleanupEngine:
         """
         result = CleanResult()
         now = time.time()
+        send = guarded(progress) if progress is not None and not dry_run else None
+        total = sum(len(c.items) for c in report.categories if c.available)
+        throttle = Throttle()
+
+        def handled() -> int:
+            return result.deleted_files + result.failed_files + result.refused_files
 
         for category_report in report.categories:
             if not category_report.available:
                 continue
             category = category_report.category
             roots = category_report.roots_scanned
+            if send is not None:
+                send(Progress(
+                    f"Очистка диска — {category.name}", fraction_of(handled(), total)
+                ))
 
             # Resolve each root once for the whole category instead of once
             # per file per root. resolve() is a filesystem round-trip (~77 us
@@ -325,9 +351,21 @@ class CleanupEngine:
                 result.deleted_bytes += sum(i.size_bytes for i in approved)
                 continue
 
-            deletion.run(approved, result)
+            def tick(name: str = category.name) -> None:
+                if send is not None and throttle.ready():
+                    send(Progress(
+                        f"Очистка диска — {name}: удалено "
+                        f"{format_size(result.deleted_bytes)}",
+                        fraction_of(handled(), total),
+                    ))
+
+            deletion.run(approved, result, on_item=tick)
 
             if category.remove_empty_dirs:
+                if send is not None:
+                    send(Progress(
+                        f"Очистка диска — {category.name}: удаление пустых папок"
+                    ))
                 self._remove_empty_dirs(roots)
 
         if not dry_run:

@@ -156,7 +156,13 @@ def _window(app):
     from pudge_gaming_manager.app.gui.optimize_actions import OptimizeActions
 
     class _Window(OptimizeActions):
-        pass
+        # The bar helpers belong to Dashboard; the status line is all the
+        # mixin needs from them here.
+        def _begin_work(self, text):
+            self._status.setText(text)
+
+        def _end_work(self):
+            self._status.setText("")
 
     from PySide6.QtWidgets import QWidget
 

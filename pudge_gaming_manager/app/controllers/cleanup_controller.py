@@ -21,6 +21,12 @@ class CleanupController(QObject):
     planned = Signal(object)
     """Emits a :class:`DiskCleanupPlan`."""
 
+    progress = Signal(object)
+    """Emits :class:`Progress` from the worker thread while files are deleted.
+
+    Connect it to a method of a UI object, so Qt delivers it queued on the
+    UI thread (see ``background.py``)."""
+
     cleaned = Signal(object)
     """Emits a :class:`DiskCleanupResult`."""
 
@@ -49,7 +55,10 @@ class CleanupController(QObject):
     def start_clean(self, plan: DiskCleanupPlan, selected: set[str]) -> None:
         """Delete exactly what the operator ticked in the preview."""
         if self._runner.start(
-            lambda: self._cleaner.run(plan, selected), self._on_cleaned
+            lambda: self._cleaner.run(
+                plan, selected, progress=self.progress.emit
+            ),
+            self._on_cleaned,
         ):
             self._cleaning = True
 

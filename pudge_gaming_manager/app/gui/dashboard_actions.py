@@ -156,11 +156,11 @@ class ProfileAndGamesActions:
         if self._cleanup.busy:  # type: ignore[attr-defined]
             return
         self._set_profile_actions(False)
-        self._status.setText("Поиск мусора на диске…")  # type: ignore[attr-defined]
+        self._begin_work("Поиск мусора на диске…")  # type: ignore[attr-defined]
         self._cleanup.start_plan()  # type: ignore[attr-defined]
 
     def _on_cleanup_planned(self, plan: object) -> None:
-        self._status.setText("")  # type: ignore[attr-defined]
+        self._end_work()  # type: ignore[attr-defined]
         self._set_profile_actions(True)
         if not plan.has_content:  # type: ignore[union-attr]
             QMessageBox.information(
@@ -176,11 +176,11 @@ class ProfileAndGamesActions:
             return
 
         self._set_profile_actions(False)
-        self._status.setText("Очистка диска…")  # type: ignore[attr-defined]
+        self._begin_work("Очистка диска…")  # type: ignore[attr-defined]
         self._cleanup.start_clean(plan, selected)  # type: ignore[attr-defined]
 
     def _on_cleanup_finished(self, result: object) -> None:
-        self._status.setText("")  # type: ignore[attr-defined]
+        self._end_work()  # type: ignore[attr-defined]
         self._set_profile_actions(True)
         CleanupResultDialog(result, self).exec()  # type: ignore[arg-type]
         # Free space changed, so the disk figure and the score are stale.
@@ -190,7 +190,7 @@ class ProfileAndGamesActions:
         self._controller.refresh()  # type: ignore[attr-defined]
 
     def _on_cleanup_failed(self, message: str) -> None:
-        self._status.setText("")  # type: ignore[attr-defined]
+        self._end_work()  # type: ignore[attr-defined]
         self._set_profile_actions(True)
         QMessageBox.warning(self, "Очистка диска", message)
 
@@ -201,13 +201,40 @@ class ProfileAndGamesActions:
         if self._tools.busy:  # type: ignore[attr-defined]
             return
         self._set_profile_actions(False)
-        self._status.setText("Замер занятого места… это занимает до минуты")  # type: ignore[attr-defined]
+        self._begin_work("Замер занятого места… это занимает до минуты")  # type: ignore[attr-defined]
         self._tools.start_usage_survey()  # type: ignore[attr-defined]
 
     def _on_usage_ready(self, report: object) -> None:
-        self._status.setText("")  # type: ignore[attr-defined]
+        self._end_work()  # type: ignore[attr-defined]
         self._set_profile_actions(True)
-        UsageDialog(report, self).exec()  # type: ignore[arg-type]
+        # Held while open: the dialog asks for a delete or a move, and the
+        # answers (plan, progress, result) are routed back to it.
+        dialog = UsageDialog(report, self)  # type: ignore[arg-type]
+        self._usage_dialog = dialog  # type: ignore[attr-defined]
+        dialog.plan_requested.connect(self._on_folder_plan_requested)
+        dialog.run_requested.connect(self._tools.start_folder_run)  # type: ignore[attr-defined]
+        try:
+            dialog.exec()
+        finally:
+            self._usage_dialog = None  # type: ignore[attr-defined]
+
+    def _on_folder_plan_requested(self, action: object, path: object, destination: object) -> None:
+        self._tools.start_folder_plan(action, path, destination)  # type: ignore[attr-defined]
+
+    def _on_folder_planned(self, plan: object) -> None:
+        if self._usage_dialog is not None:  # type: ignore[attr-defined]
+            self._usage_dialog.confirm_plan(plan)  # type: ignore[attr-defined]
+
+    def _on_tools_progress(self, event: object) -> None:
+        """The survey reports into the header bar; a folder run into its dialog."""
+        if self._usage_dialog is not None:  # type: ignore[attr-defined]
+            self._usage_dialog.show_progress(event)  # type: ignore[attr-defined]
+        else:
+            self._on_progress(event)  # type: ignore[attr-defined]
+
+    def _on_folder_done(self, result: object) -> None:
+        if self._usage_dialog is not None:  # type: ignore[attr-defined]
+            self._usage_dialog.show_result(result)  # type: ignore[attr-defined]
 
     # -- startup manager ---------------------------------------------------
 
@@ -239,8 +266,12 @@ class ProfileAndGamesActions:
             self._startup_dialog.apply_result(entry)  # type: ignore[arg-type]
 
     def _on_tools_failed(self, message: str) -> None:
-        self._status.setText("")  # type: ignore[attr-defined]
+        self._end_work()  # type: ignore[attr-defined]
         self._set_profile_actions(True)
+        if self._usage_dialog is not None:  # type: ignore[attr-defined]
+            # A refused plan or a stopped run is answered where it was asked.
+            self._usage_dialog.fail(message)  # type: ignore[attr-defined]
+            return
         QMessageBox.warning(self, "Инструменты", message)
 
     # -- steam reset -------------------------------------------------------
@@ -255,11 +286,11 @@ class ProfileAndGamesActions:
         if self._steam.busy:  # type: ignore[attr-defined]
             return
         self._set_profile_actions(False)
-        self._status.setText("Подготовка очистки Стима…")  # type: ignore[attr-defined]
+        self._begin_work("Подготовка очистки Стима…")  # type: ignore[attr-defined]
         self._steam.start_plan()  # type: ignore[attr-defined]
 
     def _on_steam_planned(self, plan: object) -> None:
-        self._status.setText("")  # type: ignore[attr-defined]
+        self._end_work()  # type: ignore[attr-defined]
         self._set_profile_actions(True)
         if plan is None:
             QMessageBox.information(
@@ -273,15 +304,15 @@ class ProfileAndGamesActions:
         # Games the operator unticked are moved back to keep.
         confirmed = dialog.confirmed_plan()
         self._set_profile_actions(False)
-        self._status.setText("Удаление игр…")  # type: ignore[attr-defined]
+        self._begin_work("Удаление игр…")  # type: ignore[attr-defined]
         self._steam.start_wipe(confirmed)  # type: ignore[attr-defined]
 
     def _on_steam_wiped(self, result: object) -> None:
-        self._status.setText("")  # type: ignore[attr-defined]
+        self._end_work()  # type: ignore[attr-defined]
         self._set_profile_actions(True)
         SteamResultDialog(result, self).exec()  # type: ignore[arg-type]
 
     def _on_steam_failed(self, message: str) -> None:
-        self._status.setText("")  # type: ignore[attr-defined]
+        self._end_work()  # type: ignore[attr-defined]
         self._set_profile_actions(True)
         QMessageBox.warning(self, "Очистка Стима", message)

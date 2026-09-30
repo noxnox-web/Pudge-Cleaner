@@ -29,9 +29,11 @@ import time
 from dataclasses import dataclass, field
 
 from ...utilities.command_runner import CommandRunner
-from ...utilities.logging_setup import audit_event, get_logger
 from ...utilities.formatting import format_size
+from ...utilities.logging_setup import audit_event, get_logger
+from ...utilities.progress import Progress, ProgressCallback, fraction_of, guarded
 from ...utilities.secure_delete import DeleteError, delete_file, delete_tree
+from ...utilities.tree_delete import DeleteStats
 from .library import discover_libraries, find_steam, installed_games
 from .models import InstalledGame, SteamInstall, SteamLibrary
 from .signout import signout_targets
@@ -142,6 +144,33 @@ class WipeResult:
         return format_size(self.reclaimed_bytes)
 
 
+class _Reporter:
+    """Turns one tree delete's byte counts into the reset's overall progress.
+
+    The bar measures bytes against the plan's total, so a 60 GB game moves
+    it more than a cache folder does. The totals are from manifests and an
+    earlier scan, so :func:`fraction_of` clamps rather than trusting them.
+    """
+
+    def __init__(self, progress: ProgressCallback, result: WipeResult, total: int) -> None:
+        self._send = guarded(progress)
+        self._result = result
+        self._total = total
+        self._text = ""
+
+    def phase(self, text: str) -> None:
+        """Start a step; ``result`` already holds everything finished before it."""
+        self._text = text
+        self._send(Progress(text, fraction_of(self._result.reclaimed_bytes, self._total)))
+
+    def tree(self, stats: DeleteStats) -> None:
+        """The running totals of the folder being deleted now."""
+        self._send(Progress(
+            f"{self._text} — удалено {format_size(stats.bytes)}",
+            fraction_of(self._result.reclaimed_bytes + stats.bytes, self._total),
+        ))
+
+
 def _remembered_accounts(install: SteamInstall) -> int:
     """How many accounts ``loginusers.vdf`` lists. 0 if it cannot be read."""
     try:
@@ -202,23 +231,45 @@ class SteamWiper:
 
     # -- wipe --------------------------------------------------------------
 
-    def wipe(self, plan: WipePlan, *, dry_run: bool = False) -> WipeResult:
-        """Remove what the plan approved. Stops Steam first to free locks."""
+    def wipe(
+        self,
+        plan: WipePlan,
+        *,
+        dry_run: bool = False,
+        progress: ProgressCallback | None = None,
+    ) -> WipeResult:
+        """Remove what the plan approved. Stops Steam first to free locks.
+
+        ``progress`` is told which step is running and how many of the
+        plan's bytes are gone, from the thread that calls this method.
+        """
         result = WipeResult()
+        report = (
+            _Reporter(progress, result, plan.total_bytes)
+            if progress is not None and not dry_run
+            else None
+        )
         if not dry_run:
+            if report is not None:
+                report.phase("Очистка Steam — остановка Steam")
             result.steam_stopped = self._stop_steam()
 
         keep_ids = {g.app_id for g in plan.keep}
-        for game in plan.remove:
-            # Re-check at delete time: the exceptions list is authoritative,
-            # and a stale plan must never delete a game now marked to keep.
-            if game.app_id in keep_ids:
-                continue
-            self._remove_game(game, result, dry_run)
+        # Re-check at delete time: the exceptions list is authoritative,
+        # and a stale plan must never delete a game now marked to keep.
+        games = [g for g in plan.remove if g.app_id not in keep_ids]
+        for index, game in enumerate(games, 1):
+            if report is not None:
+                report.phase(f"Очистка Steam — игра {index} из {len(games)}: {game.name}")
+            self._remove_game(game, result, dry_run, report)
 
         for cache in plan.caches:
-            self._remove_cache(cache, result, dry_run)
-        cleared = [self._remove_cache(t, result, dry_run) for t in plan.signout]
+            if report is not None:
+                report.phase(f"Очистка Steam — кэш: {cache.label}")
+            self._remove_cache(cache, result, dry_run, report)
+        if plan.signout and report is not None:
+            report.phase("Очистка Steam — выход из аккаунтов")
+        cleared = [self._remove_cache(t, result, dry_run, report) for t in plan.signout]
         result.signed_out = bool(cleared) and all(cleared)
 
         if not dry_run:
@@ -235,7 +286,11 @@ class SteamWiper:
         return result
 
     def _remove_game(
-        self, game: InstalledGame, result: WipeResult, dry_run: bool
+        self,
+        game: InstalledGame,
+        result: WipeResult,
+        dry_run: bool,
+        report: _Reporter | None = None,
     ) -> None:
         install_path = game.install_path
         # Confine to the library's common folder: the install dir name comes
@@ -257,7 +312,9 @@ class SteamWiper:
 
         try:
             if install_path.is_dir():
-                result.reclaimed_bytes += delete_tree(install_path)
+                result.reclaimed_bytes += delete_tree(
+                    install_path, progress=report.tree if report else None
+                )
             result.removed_games += 1
         except DeleteError as exc:
             result.refused.append(f"{game.name}: {exc}")
@@ -274,14 +331,20 @@ class SteamWiper:
             result.failed.append(f"{game.name} manifest: {exc.strerror or exc}")
 
     def _remove_cache(
-        self, cache: CacheTarget, result: WipeResult, dry_run: bool
+        self,
+        cache: CacheTarget,
+        result: WipeResult,
+        dry_run: bool,
+        report: _Reporter | None = None,
     ) -> bool:
         """Clear one target; True when it was cleared completely."""
         if dry_run:
             result.reclaimed_bytes += cache.size_bytes or 0
             return True
         try:
-            result.reclaimed_bytes += cache.clear()
+            result.reclaimed_bytes += cache.clear(
+                progress=report.tree if report else None
+            )
         except DeleteError as exc:
             result.refused.append(f"{cache.label}: {exc}")
             return False

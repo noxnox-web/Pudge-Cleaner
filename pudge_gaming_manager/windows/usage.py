@@ -29,6 +29,7 @@ from dataclasses import dataclass, field
 
 from ..utilities.formatting import format_size
 from ..utilities.logging_setup import get_logger
+from ..utilities.progress import Progress, ProgressCallback, Throttle, guarded
 
 _log = get_logger(__name__)
 
@@ -182,10 +183,17 @@ def survey(
     depth: int = DEFAULT_DEPTH,
     limit: int = DEFAULT_LIMIT,
     time_budget_s: float = DEFAULT_TIME_BUDGET_S,
+    progress: ProgressCallback | None = None,
 ) -> UsageReport:
-    """Measure the largest directories under ``roots``. Changes nothing."""
+    """Measure the largest directories under ``roots``. Changes nothing.
+
+    ``progress`` is told which root is being walked and how many of its
+    folders are measured, a few times a second, from the calling thread.
+    """
     started = time.monotonic()
     report = UsageReport(depth=depth)
+    send = guarded(progress) if progress is not None else None
+    throttle = Throttle()
 
     # Each root gets its own slice of the budget rather than competing for
     # one deadline. With a shared deadline a large user profile consumed
@@ -204,13 +212,19 @@ def survey(
     slice_s = time_budget_s / len(present) if present else time_budget_s
     found: list[FolderUsage] = []
 
-    for root in present:
+    for index, root in enumerate(present):
         report.roots_scanned.append(root)
         deadline = time.monotonic() + slice_s
 
         targets, unreadable = _targets(root, depth)
         report.unreadable += unreadable
-        for target in targets:
+        for done, target in enumerate(targets):
+            if send is not None and throttle.ready():
+                # Every root gets an equal share of the bar, whatever its size.
+                send(Progress(
+                    f"Замер занятого места — {root} ({index + 1} из {len(present)})",
+                    (index + done / len(targets)) / len(present),
+                ))
             size, files, bad, finished = _directory_size(target, deadline)
             report.unreadable += bad
             if size:

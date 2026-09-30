@@ -19,6 +19,7 @@ from dataclasses import dataclass, field
 from ...utilities.disk_space import FreeSpaceDelta, drive_of
 from ...utilities.formatting import format_size
 from ...utilities.logging_setup import get_logger
+from ...utilities.progress import Progress, ProgressCallback, guarded
 from ...windows.cleanup import recycle_bin
 from ...windows.cleanup.categories import CATEGORIES
 from ...windows.cleanup.engine import CleanupEngine
@@ -156,7 +157,12 @@ class DiskCleaner:
         return plan
 
     def run(
-        self, plan: DiskCleanupPlan, selected: set[str], *, dry_run: bool = False
+        self,
+        plan: DiskCleanupPlan,
+        selected: set[str],
+        *,
+        dry_run: bool = False,
+        progress: ProgressCallback | None = None,
     ) -> DiskCleanupResult:
         """Execute the operator's selection from ``plan``.
 
@@ -165,6 +171,8 @@ class DiskCleaner:
                 :data:`RECYCLE_BIN_ID`. Ids absent from the plan are
                 ignored rather than guessed at.
             dry_run: Count what would go without deleting anything.
+            progress: Told what is being cleaned and how far it has got.
+                Called on the thread that runs this method.
         """
         result = DiskCleanupResult()
 
@@ -186,7 +194,7 @@ class DiskCleaner:
             # The engine re-validates every path against the same gate the
             # scan used, so a stale inventory cannot authorise a delete.
             result.files = CleanupEngine(self.categories).clean(
-                chosen, dry_run=dry_run
+                chosen, dry_run=dry_run, progress=progress
             )
 
         if RECYCLE_BIN_ID in selected and plan.bin_state.has_content:
@@ -196,6 +204,9 @@ class DiskCleaner:
                 result.bin_bytes = plan.bin_state.size_bytes
                 result.bin_detail = "Пробный прогон: корзина не очищена."
             else:
+                if progress is not None:
+                    # One shell call with no callbacks: nothing to measure.
+                    guarded(progress)(Progress("Очистка корзины…"))
                 before = plan.bin_state.size_bytes
                 ok, detail = recycle_bin.empty()
                 result.bin_emptied = ok

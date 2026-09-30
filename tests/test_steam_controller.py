@@ -39,7 +39,7 @@ class _FakeWiper:
         self.scanned_keep = keep_app_ids
         return f"plan(keep={sorted(keep_app_ids)})"
 
-    def wipe(self, _plan, *, dry_run: bool = False):
+    def wipe(self, _plan, *, dry_run: bool = False, progress=None):
         self.release.wait(5)
         return "result"
 
@@ -83,7 +83,7 @@ def test_wiping_is_true_during_wipe_and_clears_after(app) -> None:
 
 def test_wiping_clears_when_the_wipe_fails(app) -> None:
     class _Boom(_FakeWiper):
-        def wipe(self, _plan, *, dry_run: bool = False):
+        def wipe(self, _plan, *, dry_run: bool = False, progress=None):
             raise RuntimeError("disk detached")
 
     controller = _controller(_Boom())

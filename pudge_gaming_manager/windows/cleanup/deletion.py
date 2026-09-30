@@ -37,6 +37,7 @@ is the only one that touches the tally.
 from __future__ import annotations
 
 from concurrent.futures import ThreadPoolExecutor
+from typing import Callable
 
 from ...utilities.logging_setup import get_logger
 from ...utilities.secure_delete import DeleteError, delete_file
@@ -55,11 +56,21 @@ PARALLEL_DELETE_THRESHOLD = 200
 DeleteOutcome = tuple[str, int, str]
 
 
-def run(items: list[CleanupItem], result: CleanResult) -> None:
-    """Delete every already-validated item, accumulating into ``result``."""
+def run(
+    items: list[CleanupItem],
+    result: CleanResult,
+    on_item: Callable[[], None] | None = None,
+) -> None:
+    """Delete every already-validated item, accumulating into ``result``.
+
+    ``on_item`` is called after each item is tallied, on the caller's
+    thread, so it may read ``result`` without a lock.
+    """
     if len(items) < PARALLEL_DELETE_THRESHOLD:
         for item in items:
             _record(item, attempt(item), result)
+            if on_item is not None:
+                on_item()
         return
 
     with ThreadPoolExecutor(
@@ -67,6 +78,8 @@ def run(items: list[CleanupItem], result: CleanResult) -> None:
     ) as pool:
         for item, outcome in zip(items, pool.map(attempt, items)):
             _record(item, outcome, result)
+            if on_item is not None:
+                on_item()
 
 
 def attempt(item: CleanupItem) -> DeleteOutcome:

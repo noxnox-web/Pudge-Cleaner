@@ -18,9 +18,11 @@ import os
 import pathlib
 from dataclasses import dataclass, field
 from enum import Enum
+from typing import Callable
 
 from ...utilities.formatting import format_size
 from ...utilities.secure_delete import delete_file, delete_tree
+from ...utilities.tree_delete import DeleteStats
 
 
 class ClearMode(str, Enum):
@@ -44,8 +46,11 @@ class CacheTarget:
     def size_display(self) -> str:
         return format_size(self.size_bytes) if self.size_bytes is not None else "?"
 
-    def clear(self) -> int:
+    def clear(self, progress: Callable[[DeleteStats], None] | None = None) -> int:
         """Remove this target and return the bytes reclaimed.
+
+        ``progress`` receives the running totals of a folder delete; a single
+        file has nothing to report.
 
         Raises:
             DeleteError: the target (or a child) turned into a reparse point
@@ -57,12 +62,14 @@ class CacheTarget:
         if not self.path.exists():
             return 0
         if self.mode is ClearMode.TREE:
-            return delete_tree(self.path)
+            return delete_tree(self.path, progress=progress)
 
         # CONTENTS: empty the folder through its own handle, sparing the kept
         # names. Listing it by path and deleting each child by path would let
         # the folder be swapped for a junction between the two.
-        return delete_tree(self.path, keep_root=True, spare=tuple(self.keep_names))
+        return delete_tree(
+            self.path, keep_root=True, spare=tuple(self.keep_names), progress=progress
+        )
 
 
 def dir_size(path: pathlib.Path) -> int | None:

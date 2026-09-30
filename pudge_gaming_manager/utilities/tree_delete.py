@@ -48,11 +48,12 @@ import contextlib
 import ctypes
 import os
 import pathlib
-import time
 from concurrent.futures import ThreadPoolExecutor
 from ctypes import wintypes
 from dataclasses import dataclass, field
 from typing import Callable, Iterator
+
+from .progress import Throttle
 
 _IS_WINDOWS = os.name == "nt"
 
@@ -98,9 +99,6 @@ _ERROR_NOT_SUPPORTED = 50
 _PARALLEL_THRESHOLD = 64
 _WORKERS = 8
 _ENUM_BUFFER = 64 * 1024
-#: Seconds between progress reports: often enough to look live, rare enough
-#: that reporting never shows up next to ~400 us per deleted file.
-_PROGRESS_INTERVAL = 0.25
 
 
 class _UnicodeString(ctypes.Structure):
@@ -283,15 +281,13 @@ class _Walker:
         self.stats = DeleteStats()
         self.pool: ThreadPoolExecutor | None = None
         self.progress = progress
-        self._reported = time.monotonic()
+        # Often enough to look live, rare enough that reporting never shows
+        # up next to ~400 us per deleted file.
+        self._throttle = Throttle()
 
     def _tick(self) -> None:
         """Report the running totals, at most once per interval."""
-        if self.progress is None:
-            return
-        now = time.monotonic()
-        if now - self._reported >= _PROGRESS_INTERVAL:
-            self._reported = now
+        if self.progress is not None and self._throttle.ready():
             self.progress(self.stats)
 
     def _delete_leaf(self, parent: int, entry: _Entry) -> tuple[int, int]:
@@ -325,6 +321,7 @@ class _Walker:
         if self.measure_only:
             self.stats.bytes += sum(e.size for e in leaves if not e.is_link)
             self.stats.files += sum(1 for e in leaves if not e.is_link)
+            self.stats.links += sum(1 for e in leaves if e.is_link)
         else:
             self._delete_leaves(handle, leaves, where)
 
@@ -454,7 +451,10 @@ def delete_tree(
 
 
 def measure_tree(root: pathlib.Path, *, backup_intent: bool = False) -> DeleteStats:
-    """Total size and file count under ``root``, links neither followed nor counted."""
+    """Size and file count under ``root``; links are counted in ``links``, never followed.
+
+    ``bytes`` and ``files`` cover regular files only, so a caller that must
+    not move or copy a link can refuse when ``links`` is not zero."""
     if not _IS_WINDOWS:  # pragma: no cover
         raise OSError("handle-based tree measurement is Windows-only")
     with _privileges(backup_intent):

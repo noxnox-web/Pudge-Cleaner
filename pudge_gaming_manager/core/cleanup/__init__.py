@@ -13,11 +13,13 @@ selection runs is domain logic, and domain logic does not belong in a Qt
 controller. The controller asks for a plan, shows it, and hands the
 approved plan back.
 
-The read-only usage survey lives here too. It is the counterpart to the
-cleaner rather than a separate concern: the allowlist exists so the cleaner
-can never delete something nobody listed, and the price of that discipline
-is that it cannot say anything about the folder no category names. The
-survey answers that and leaves the decision to a person.
+The usage survey lives here too. It is the counterpart to the cleaner
+rather than a separate concern: the allowlist exists so the cleaner can never
+delete something nobody listed, and the price of that discipline is that it
+cannot say anything about the folder no category names. The survey answers
+that; what the operator then does with a folder from it — delete it, or move
+it to another drive and leave a junction — is planned, refused or allowed by
+the folder policy and carried out by ``folder_ops``, both re-exported here.
 """
 
 from __future__ import annotations
@@ -32,6 +34,16 @@ from ...windows.cleanup.categories import CATEGORIES, default_categories
 from ...windows.cleanup.report import CategoryReport, CleanResult, ScanReport
 from ...windows.cleanup.recycle_bin import RecycleBinState
 from ...windows.cleanup.rules import CleanupCategory, CleanupRisk
+from ...windows.folder_ops import (
+    FolderAction,
+    FolderPlan,
+    FolderRefused,
+    FolderResult,
+    plan_delete,
+    plan_move,
+    run_folder,
+)
+from ...windows.folder_policy import block_reason
 from ...windows.usage import FolderUsage, UsageReport, survey
 
 __all__ = [
@@ -45,9 +57,17 @@ __all__ = [
     "DiskCleanupResult",
     "RECYCLE_BIN_ID",
     "RecycleBinState",
+    "FolderAction",
+    "FolderPlan",
+    "FolderRefused",
+    "FolderResult",
     "FolderUsage",
     "ScanReport",
     "UsageReport",
+    "block_reason",
     "default_categories",
+    "plan_delete",
+    "plan_move",
+    "run_folder",
     "survey",
 ]

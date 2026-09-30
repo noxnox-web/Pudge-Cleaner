@@ -20,7 +20,8 @@ from ...database.connection import Database
 from ...utilities.exceptions import PgmError
 from ...utilities.logging_setup import get_logger
 from ...utilities.privileges import is_admin
-from .progress import ProgressCallback, guarded_progress, step_reporter
+from ...utilities.progress import ProgressCallback, guarded
+from .progress import step_reporter
 from .store import RunStore
 from .tweak import (
     ALREADY_DESIRED,
@@ -283,7 +284,7 @@ class TweakEngine:
         self._store.open_run(
             plan.run_id, dry_run=dry_run, planned=len(plan.applicable)
         )
-        send = guarded_progress(progress) if progress is not None else None
+        send = guarded(progress) if progress is not None else None
         total, step = len(plan.applicable), 0
         try:
             for change in plan.changes:
