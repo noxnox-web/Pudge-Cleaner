@@ -35,6 +35,14 @@ def _selftest() -> int:
     assert rows["cpu"], "in-process WMI returned no processor"
     print(f"WMI in-process OK ({time.perf_counter() - started:.2f}s)")
 
+    # The nightly schedule goes through the same kind of COM binding. Reading
+    # needs no elevation and changes nothing; "no task" is a valid answer, a
+    # bundle missing the scheduler's COM support is not.
+    from pudge_gaming_manager.windows.schedule import task
+
+    info = task.query()
+    print(f"Task Scheduler COM OK (nightly installed: {info.installed})")
+
     app = QApplication([])
     window = Dashboard()
     window.show()
