@@ -180,10 +180,31 @@ PROTECTED_PATH_FRAGMENTS: tuple[str, ...] = (
     "riot games",
     "battle.net",
     "gog galaxy",
-    # Anti-cheat
+    # Publishers' install folders and the launchers beside them. A name is
+    # matched from its start, so "Riot Games" says nothing about "Riot
+    # Vanguard": every publisher folder has to be listed under its own name.
+    "electronic arts",
+    "ea games",
+    "origin games",
+    "ubisoft",
+    "rockstar games",
+    "valve",
+    "wargaming.net",
+    "2k games",
+    "activision",
+    "bethesda softworks",
+    "blizzard entertainment",
+    "square enix",
+    "paradox interactive",
+    "grinding gear games",
+    "wegame",
+    "xboxgames",
+    # Anti-cheat. "vanguard" alone is not enough: Riot installs it as
+    # "Riot Vanguard", which begins with "riot", not with "vanguard".
     "easyanticheat",
     "battleye",
     "vanguard",
+    "riot vanguard",
     "faceit",
     "esea",
     # Irreplaceable user data

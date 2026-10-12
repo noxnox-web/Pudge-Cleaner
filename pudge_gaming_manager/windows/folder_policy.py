@@ -35,6 +35,12 @@ from .cleanup.rules import component_is_protected, within
 _OPERATOR_MAY_TOUCH = frozenset({
     "steamapps", "steamlibrary", "epic games", "riot games", "battle.net",
     "gog galaxy",
+    # Publishers' game folders: a person moves or deletes a game. Their
+    # anti-cheat ("Riot Vanguard", "EasyAntiCheat") is not on this list.
+    "electronic arts", "ea games", "origin games", "ubisoft", "rockstar games",
+    "valve", "wargaming.net", "2k games", "activision", "bethesda softworks",
+    "blizzard entertainment", "square enix", "paradox interactive",
+    "grinding gear games", "wegame", "xboxgames",
     "documents", "desktop", "pictures", "videos", "music", "onedrive",
     "saved games", "my games",
 })

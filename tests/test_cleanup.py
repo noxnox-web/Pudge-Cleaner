@@ -406,7 +406,61 @@ def test_a_waiver_does_not_unlock_the_other_fragments() -> None:
 def test_only_launcher_categories_waive_a_path_fragment() -> None:
     """No category picks up a waiver by accident."""
     waiving = {c.id for c in CATEGORIES if c.allowed_path_fragments}
-    assert waiving == {"cache.launcher.battlenet", "cache.launcher.riot"}
+    assert waiving == {
+        "cache.launcher.battlenet",
+        "cache.launcher.riot",
+        "cache.launcher.ea",
+        "cache.launcher.ubisoft",
+    }
+
+
+# -- publisher folders and anti-cheat --------------------------------------
+
+
+def test_every_protected_fragment_is_lowercase() -> None:
+    """Names are compared lowercased, so a capital would never match.
+
+    ``"Riot Vanguard"`` in the table would look right and protect nothing.
+    """
+    from pudge_gaming_manager.windows.cleanup.rules import PROTECTED_PATH_FRAGMENTS
+
+    assert all(f == f.lower() for f in PROTECTED_PATH_FRAGMENTS)
+
+
+@pytest.mark.parametrize(
+    "path",
+    [
+        # Outside Program Files, where no protected root already covers the
+        # path and the name table is the only guard. A ".dat" so the
+        # executable-extension guard does not decide it either.
+        r"D:\Riot Vanguard\log\a.dat",   # begins with "riot", not "vanguard"
+        r"D:\Games\EA Games\Apex\a.dat",
+        r"D:\Origin Games\Titanfall\a.dat",
+        r"D:\Ubisoft\Ubisoft Game Launcher\games\X\a.dat",
+        r"D:\Rockstar Games\GTA V\a.dat",
+        r"D:\Wargaming.net\WorldOfTanks\a.dat",
+        r"D:\Valve\Steam\a.dat",
+        r"C:\XboxGames\Minecraft\Content\a.dat",
+        r"D:\EasyAntiCheat_EOS\a.dat",
+    ],
+)
+def test_a_category_cannot_reach_a_publisher_or_anti_cheat_folder(path: str) -> None:
+    """The whole table is name-prefix matching, so each folder is named."""
+    assert CleanupEngine(()).is_protected(pathlib.Path(path))
+
+
+def test_the_launcher_waiver_does_not_open_the_publishers_games() -> None:
+    """EA's cache category may enter ``Electronic Arts\\EA Desktop\\cache``,
+    and nothing else under that publisher or any other."""
+    engine = CleanupEngine(())
+    ea = frozenset({"electronic arts"})
+    cache = pathlib.Path(r"C:\Users\x\AppData\Local\Electronic Arts\EA Desktop\cache\a.tmp")
+    assert not engine.is_protected(cache, allowed_fragments=ea)
+    # Another vendor's guard is untouched by that waiver.
+    vanguard = pathlib.Path(r"D:\Riot Vanguard\log\a.dat")
+    assert engine.is_protected(vanguard, allowed_fragments=ea)
+    ubisoft = pathlib.Path(r"D:\Ubisoft\games\a.dat")
+    assert engine.is_protected(ubisoft, allowed_fragments=ea)
 
 
 # -- formatting ------------------------------------------------------------

@@ -300,6 +300,9 @@ CATEGORIES: tuple[CleanupCategory, ...] = (
         ),
         min_age_hours=24.0,
         risk=CleanupRisk.LOW,
+        # Every root is the launcher's own log or cache folder under the
+        # publisher's name; the games are not beneath any of them.
+        allowed_path_fragments=("electronic arts",),
     ),
     CleanupCategory(
         id="cache.launcher.ubisoft",
@@ -315,6 +318,9 @@ CATEGORIES: tuple[CleanupCategory, ...] = (
         ),
         min_age_hours=24.0,
         risk=CleanupRisk.LOW,
+        # The launcher keeps its own folder under its publisher's name; the
+        # installed games live elsewhere, in the install directory.
+        allowed_path_fragments=("ubisoft",),
     ),
     # -- the user's own files ----------------------------------------------
     CleanupCategory(

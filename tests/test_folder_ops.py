@@ -86,6 +86,11 @@ def other_drive(monkeypatch) -> None:
     lambda m: m.profile / "Videos" / "Captures" / "2025",     # the owner's own files
     lambda m: m.local / "Programs" / "SomeApp",
     lambda m: m.data / "Epic" / "Cache",
+    # Other publishers' game folders are a person's to move, like Riot's.
+    lambda m: m.pf / "EA Games" / "Apex",
+    lambda m: m.pf86 / "Ubisoft" / "Ubisoft Game Launcher" / "games" / "Far Cry",
+    lambda m: m.pf / "Rockstar Games" / "Grand Theft Auto V",
+    lambda m: m.profile / "Games" / "Wargaming.net" / "WorldOfTanks",
 ])
 def test_a_folder_a_person_would_choose_is_allowed(machine, where) -> None:
     folder = where(machine)
@@ -111,6 +116,9 @@ def test_a_folder_a_person_would_choose_is_allowed(machine, where) -> None:
     lambda m: m.local / "Temp" / "x",
     lambda m: m.pf / "SmartShell Client" / "x",                    # club software
     lambda m: m.pf / "EasyAntiCheat" / "x",                        # anti-cheat
+    lambda m: m.pf / "Riot Vanguard",                              # anti-cheat, whole
+    lambda m: m.pf / "Riot Vanguard" / "logs",
+    lambda m: m.pf / "EasyAntiCheat_EOS" / "x",
     lambda m: m.profile / "Games" / "Vault" / "x",                 # credentials
 ])
 def test_what_would_break_the_machine_is_refused(machine, where) -> None:
