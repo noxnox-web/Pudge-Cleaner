@@ -17,6 +17,7 @@ from PySide6.QtWidgets import (
 from ...core.audit.report import Level
 from . import theme
 from .history_dialog import HistoryDialog
+from .nightly_dialog import NightlyDialog
 from .report_dialog import ReportDialog
 from .settings_dialog import PlanConfirmDialog, SettingsDialog
 
@@ -41,6 +42,9 @@ class SystemActions:
         self._settings_button = self._secondary("Настройки Windows…", self._on_settings)
         self._history_button = self._secondary("История изменений…", self._on_history)
         self._monitor_button = self._secondary("Замер нагрузки…", self._on_monitor)
+        # Changes the schedule, not the PC, so it needs no scan first.
+        self._nightly_button = self._secondary("Ночная очистка…", self._on_nightly)
+        self._nightly_button.setEnabled(True)
 
     def _secondary(self, text: str, handler) -> QPushButton:
         button = QPushButton(text)
@@ -212,6 +216,9 @@ class SystemActions:
         ).exec()
 
     # -- history -----------------------------------------------------------
+
+    def _on_nightly(self) -> None:
+        NightlyDialog(self).exec()  # type: ignore[arg-type]
 
     def _on_history(self) -> None:
         if self._system.busy:  # type: ignore[attr-defined]

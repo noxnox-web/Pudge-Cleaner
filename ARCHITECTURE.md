@@ -329,7 +329,7 @@ pudge_gaming_manager/
 ├── core/          scanner/ · diagnostics/ · optimization/ · repair/
 │                  rollback/ · scoring/ · profiles/
 ├── windows/       services/ · registry/ · power/ · cleanup/
-│                  startup/ · processes/ · repair/
+│                  startup/ · processes/ · repair/ · schedule/
 │                  (GPU detection lives in hardware/gpu — see §7)
 ├── network/       diagnostics/ · adapter/ · dns/ · latency/
 ├── hardware/      probes · storage · gpu/ · monitor/ · models
@@ -337,6 +337,7 @@ pudge_gaming_manager/
 ├── database/      schema · migrations · repositories
 ├── utilities/     command_runner · powershell_runner · registry_manager
 │                  service_manager · privileges · logging · exceptions
+│                  low_impact · single_instance
 └── tests/
 ```
 

@@ -240,7 +240,15 @@ class Dashboard(ProfileAndGamesActions, SystemActions, OptimizeActions, QMainWin
         layout.setContentsMargins(20, 18, 20, 18)
         layout.setSpacing(2)
 
-        layout.addWidget(widgets.label("СИСТЕМА", "SectionHeading"))
+        # How long the scan took sits on the heading's line, right-aligned:
+        # a row of its own under a divider cost a line of height that the
+        # window's minimum size has no room for.
+        heading = QHBoxLayout()
+        heading.addWidget(widgets.label("СИСТЕМА", "SectionHeading"))
+        heading.addStretch(1)
+        self._scan_meta = widgets.label("", "MetricDetail")
+        heading.addWidget(self._scan_meta)
+        layout.addLayout(heading)
         layout.addSpacing(6)
 
         self._metrics: dict[str, MetricRow] = {}
@@ -256,16 +264,6 @@ class Dashboard(ProfileAndGamesActions, SystemActions, OptimizeActions, QMainWin
             self._metrics[key] = widget
             layout.addWidget(widget)
 
-        layout.addSpacing(8)
-        divider = QFrame()
-        divider.setObjectName("Divider")
-        divider.setFrameShape(QFrame.Shape.HLine)
-        layout.addWidget(divider)
-        layout.addSpacing(8)
-
-        self._scan_meta = widgets.label("", "MetricDetail")
-        self._scan_meta.setWordWrap(True)
-        layout.addWidget(self._scan_meta)
         return card
 
     def _build_tools(self) -> QFrame:
@@ -279,12 +277,15 @@ class Dashboard(ProfileAndGamesActions, SystemActions, OptimizeActions, QMainWin
         self._build_system_actions()
         groups = (
             (
-                ("ДИАГНОСТИКА", (self._audit_button, self._disk_usage, self._monitor_button)),
-                ("ПРОФИЛЬ КЛУБА", (self._save_profile, self._compare_profile)),
+                ("ДИАГНОСТИКА", (self._audit_button, self._monitor_button)),
+                ("НАСТРОЙКА", (self._settings_button, self._startup, self._history_button)),
             ),
             (
-                ("НАСТРОЙКА", (self._settings_button, self._startup, self._history_button)),
-                ("ОЧИСТКА", (self._clean_disk, self._reset_steam)),
+                ("ОЧИСТКА", (
+                    self._disk_usage, self._clean_disk, self._reset_steam,
+                    self._nightly_button,
+                )),
+                ("ПРОФИЛЬ КЛУБА", (self._save_profile, self._compare_profile)),
             ),
         )
         return widgets.grouped_actions(groups)
@@ -379,7 +380,7 @@ class Dashboard(ProfileAndGamesActions, SystemActions, OptimizeActions, QMainWin
             f"(build {snapshot.os.build})"
         )
         self._scan_meta.setText(
-            f"Сканирование за {snapshot.scan_duration_s:.1f} с · "
+            f"за {snapshot.scan_duration_s:.1f} с · "
             f"предупреждений: {len(snapshot.warnings)}"
         )
 

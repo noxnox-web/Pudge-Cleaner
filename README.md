@@ -172,7 +172,7 @@ platform plugin, the one club PCs use.
 | Issue detection | Findings carry severity, remedy and threshold provenance |
 | Dashboard GUI | PySide6 dark theme; scan, optimize, profile, cleanup and Steam-reset work run on worker threads; score explainer; one primary action (**Оптимизировать ПК**) with every other tool grouped beside the metrics (Диагностика / Настройка / Профиль клуба / Очистка). Lime accent from the club logo, text contrast ≥ 4.5:1, a keyboard-only focus ring, fits a 1024 px-wide screen. Optimize, disk cleanup, the Steam reset and the usage survey show one bar under the status line — filled when the step can say how far it is, animated when it cannot. A write in progress (apply, wipe, cleanup, or a folder delete or move) blocks the window from closing |
 
-**914 tests passing**, plus one opt-in live test that changes and restores
+**1004 tests passing**, plus one opt-in live test that changes and restores
 the active power plan (`PGM_LIVE_SYSTEM_TESTS=1`).
 
 ### Running it
@@ -266,6 +266,22 @@ reported, not forced. The copy names files by path, not by handle, so
 someone who can write inside the source could swap a folder for a link
 between listing and opening it; each entry is checked as it is reached, and
 the source is deleted by handle.
+
+**`Ночная очистка…`** schedules a daily run of `OPTIMIZE PC` with nobody at
+the window (05:00 by default). It is a Windows Task Scheduler task, so between
+runs nothing of the program is in memory; the program is started as
+`PudgeCleaner.exe --nightly`, creates no window, and runs at idle CPU and disk
+priority. What it may do is deliberately less than the window may: it plans at
+the `Обычная` level only (SAFE and LOW), so no MEDIUM setting, no Downloads or
+Windows logs, no app removal, no `Windows.old`, no Steam reset. It stands aside
+while the program's window is open, waits until the PC has had no keyboard or
+mouse input for 10 minutes (up to 90, then skips that night), and does not
+start on battery. A start missed because the PC was off runs after it is
+switched on. The task runs as the user who enabled it, with the highest
+privileges and no UAC prompt, so it works while that user is signed in. Each
+run writes a short summary the window shows as «Последний запуск»; every
+change goes to the audit log and `История изменений…` as usual. A restore
+point is made only when a setting changes, not for deletions alone.
 
 **`Автозагрузка…`** lists what Windows launches at sign-in and turns entries
 on or off the way Task Manager does — by writing the `StartupApproved` flag,

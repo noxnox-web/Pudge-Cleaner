@@ -291,6 +291,17 @@ def stylesheet() -> str:
     }}
     QComboBox:hover {{ border-color: {ACCENT}; }}
     QComboBox:disabled {{ color: {TEXT_FAINT}; }}
+    QTimeEdit {{
+        background-color: {SURFACE_RAISED};
+        border: 1px solid {BORDER};
+        border-radius: 6px;
+        padding: 6px 10px;
+        min-width: 64px;
+        selection-background-color: {ACCENT};
+        selection-color: {ACCENT_TEXT};
+    }}
+    QTimeEdit:hover {{ border-color: {TEXT_FAINT}; }}
+    QTimeEdit[kbfocus="true"] {{ border: 1px solid {ACCENT}; }}
     QComboBox QAbstractItemView {{
         background-color: {SURFACE_RAISED};
         border: 1px solid {BORDER};
