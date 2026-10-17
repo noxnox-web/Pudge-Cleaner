@@ -1,6 +1,6 @@
 # Pudge Cleaner
 
-**v1.0.0-dev.5** — local diagnostics, optimization and configuration management
+**v1.0.0-dev.6** — local diagnostics, optimization and configuration management
 for gaming-club PCs. Works offline: no server, no account, no telemetry — the only network use is the update check against this repository's GitHub releases.
 
 > **Status: core in development.** The foundation, hardware scanner,
