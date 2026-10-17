@@ -43,6 +43,22 @@ def _selftest() -> int:
     info = task.query()
     print(f"Task Scheduler COM OK (nightly installed: {info.installed})")
 
+    # The «Ядра GPU» benchmark programs must be in the bundle, unaltered, and
+    # the update check needs Cryptodome's compiled Ed25519 -- a bundle
+    # missing either would only fail when someone pressed the button.
+    from Cryptodome.PublicKey import ECC
+    from Cryptodome.Signature import eddsa
+
+    from pudge_gaming_manager.core.gpu_affinity import tools
+    from pudge_gaming_manager.core.update.signature import signed_message, verify_update
+
+    tools.locate()
+    key = ECC.generate(curve="Ed25519")
+    digest = "0" * 64
+    signature = eddsa.new(key, "rfc8032").sign(signed_message("1.0.0", digest)).hex()
+    verify_update(key.public_key().export_key(format="raw").hex(), "1.0.0", digest, signature)
+    print("Benchmark tools and update signature OK")
+
     app = QApplication([])
     window = Dashboard()
     window.show()

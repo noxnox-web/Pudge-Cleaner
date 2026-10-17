@@ -39,16 +39,19 @@ from ..controllers.scan_controller import ScanController, ScanResult
 from ..controllers.steam_controller import SteamController
 from ..controllers.system_controller import SystemController
 from ..controllers.tools_controller import ToolsController
+from ..controllers.update_controller import UpdateController
 from . import presenters, theme, widgets
 from .affinity_tab import AffinityTab
+from .close_guard import busy_reason, close_blocker
 from .dashboard_actions import ProfileAndGamesActions
 from .optimize_actions import OptimizeActions
 from .system_actions import SystemActions
+from .update_actions import UpdateActions
 from .resources import logo_path
 from .widgets import MetricRow
 
 
-class Dashboard(ProfileAndGamesActions, SystemActions, OptimizeActions, QMainWindow):
+class Dashboard(ProfileAndGamesActions, SystemActions, OptimizeActions, UpdateActions, QMainWindow):
     """Administrator dashboard."""
 
     def __init__(self) -> None:
@@ -70,6 +73,7 @@ class Dashboard(ProfileAndGamesActions, SystemActions, OptimizeActions, QMainWin
         self._cleanup = CleanupController(self)
         self._tools = ToolsController(self)
         self._system = SystemController(self)
+        self._updates = UpdateController(self)
         # Held only while the startup dialog is open, so a toggle's
         # result can be routed back to the row that asked for it.
         self._startup_dialog = None
@@ -111,6 +115,7 @@ class Dashboard(ProfileAndGamesActions, SystemActions, OptimizeActions, QMainWin
         self._tools.startup_toggled.connect(self._on_startup_toggled)
         self._tools.failed.connect(self._on_tools_failed)
         self._connect_system()
+        self._connect_updates()
 
         self._controller.start()
         # After the window is up, report any change a previous run left
@@ -135,6 +140,7 @@ class Dashboard(ProfileAndGamesActions, SystemActions, OptimizeActions, QMainWin
         self.setCentralWidget(tabs)
 
     def _build_header(self) -> QHBoxLayout:
+        self._build_update_actions()
         row = QHBoxLayout()
         row.setSpacing(14)
 
@@ -179,6 +185,7 @@ class Dashboard(ProfileAndGamesActions, SystemActions, OptimizeActions, QMainWin
         self._work.setFixedWidth(280)
         self._work.hide()
         right.addWidget(self._work, alignment=Qt.AlignmentFlag.AlignRight)
+        right.addWidget(self._update_button, alignment=Qt.AlignmentFlag.AlignRight)
         self._set_state("СКАНИРОВАНИЕ", None)
 
         # Rescan sits with the scan state it refreshes, not among the tools.
@@ -285,7 +292,10 @@ class Dashboard(ProfileAndGamesActions, SystemActions, OptimizeActions, QMainWin
         groups = (
             (
                 ("ДИАГНОСТИКА", (self._audit_button, self._monitor_button)),
-                ("НАСТРОЙКА", (self._settings_button, self._startup, self._history_button)),
+                ("НАСТРОЙКА", (
+                    self._settings_button, self._startup, self._history_button,
+                    self._check_updates,
+                )),
             ),
             (
                 ("ОЧИСТКА", (
@@ -437,25 +447,11 @@ class Dashboard(ProfileAndGamesActions, SystemActions, OptimizeActions, QMainWin
             "оценки сам по себе не доказывает прирост производительности.",
         )
 
+    def _busy_reason(self) -> str | None:
+        return busy_reason(self)
+
     def closeEvent(self, event) -> None:  # noqa: N802 - Qt naming
-        # A write in progress must not be interrupted: applying a tweak or
-        # removing games between the change and its verification could strand
-        # the system half-done, so either one blocks the close outright.
-        # Scans and profile reads only read, so closing waits for them to
-        # finish (shutdown joins the worker).
-        blocker = (
-            "Применяются изменения."
-            if self._optimizer.applying
-            else "Идёт очистка Стима."
-            if self._steam.wiping
-            else "Идёт очистка диска."
-            if self._cleanup.cleaning
-            else "Идёт удаление или перенос папки."
-            if self._tools.modifying
-            else "Применяются или откатываются настройки."
-            if self._system.applying
-            else self._affinity_tab.blocks_close()
-        )
+        blocker = close_blocker(self)
         if blocker is not None:
             QMessageBox.warning(
                 self, "Операция выполняется",
@@ -470,5 +466,7 @@ class Dashboard(ProfileAndGamesActions, SystemActions, OptimizeActions, QMainWin
         self._cleanup.shutdown()
         self._tools.shutdown()
         self._system.shutdown()
+        self._updates.shutdown()
         self._affinity_tab.shutdown()
         super().closeEvent(event)
+

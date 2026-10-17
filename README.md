@@ -1,7 +1,7 @@
 # Pudge Cleaner
 
 **v1.0.0-dev.5** — local diagnostics, optimization and configuration management
-for gaming-club PCs. Runs entirely offline. No server, no account, no telemetry.
+for gaming-club PCs. Works offline: no server, no account, no telemetry — the only network use is the update check against this repository's GitHub releases.
 
 > **Status: core in development.** The foundation, hardware scanner,
 > tweak/rollback engine, cleaner, OPTIMIZE pipeline, Golden Profile
@@ -158,6 +158,7 @@ platform plugin, the one club PCs use.
 | Change history and undo | Every reversible change, from any run, can be undone later — one at a time or all, newest first — through the tweak's own verified rollback. Undoing an older change beneath a newer one is refused. A Windows restore point is attempted before each real run; it is checked by sequence number, and its failure never blocks the run |
 | Load recording | Samples CPU (total and busiest core), RAM, and on NVIDIA GPU load, temperature, power, clock and throttle reasons while someone plays. It does **not** measure FPS or frame time — that needs ETW present events — and says so instead of estimating |
 | Вкладка «Ядра GPU» | AutoGpuAffinity and GoInterruptPolicy in one place. **Measure:** for each physical core except the one holding CPU 0 (its SMT sibling is skipped as the same core; on a hybrid CPU only the fastest class is tried) the video card's interrupts are pinned to that core, the adapter restarted, a Vulkan test scene run on the same core and PresentMon records every frame; average, 1 % low and 0.1 % low are ranked together, so a core that wins on average but stutters does not win. A spread under 3 % is labelled noise (a heuristic, and shown as one). **Pin:** the chosen core — the best is only preselected — goes into the adapter's `Affinity Policy` (`DevicePolicy`=4, `AssignmentSetOverride`, `DevicePriority`=High) through the tweak engine: preview, backup, read-back verification, undo from the history. **Restart:** a separate confirmed step, because it blanks the screen and ends running games. The benchmark journals the original policy as an `APPLYING` backup before its first step and puts it back exactly — an operator-chosen core is restored, not wiped as AutoGpuAffinity does — even when stopped or crashed (a crash is listed as an interrupted change at the next start). MSI mode is shown but never written: forcing it on a driver that does not handle it leaves the device without interrupts. The test scene and PresentMon (both MIT, `vendor/gpu_affinity/`) are checked against their shipped SHA-256 before every run |
+| In-app update | A check runs shortly after the window opens (and from «Проверить обновления»): GitHub's release list for this repository, newest release that carries both `PudgeCleaner-<version>.exe` and its `.sig`; pre-releases count, since `/releases/latest` would skip them all. «Доступна версия X — обновить» downloads the exe beside the program, checks an **Ed25519 signature over the version and the file's SHA-256** against the public key built into the program (so write access to the releases page is not enough to ship code, and an old signed release cannot be renamed into a newer one), asks the busy-check once more after the download, then renames the running exe to `.old`, moves the new one into its place and starts it; the next start deletes `.old`. Same file name, so the nightly task keeps working; the elevated process starts the new one with no second prompt. Nothing is replaced on any failure. A source checkout reports the release and opens its page instead |
 | Application removal | Xbox apps, Widgets, consumer Teams, OneDrive and a named list of preinstalled Store apps. Three guards, because this is the one thing the program cannot undo: an explicit catalogue with no pattern matching, `System`-signed packages refused as OS components, and every deliberate omission recorded with its reason — `Microsoft.XboxIdentityProvider` above all, because removing it breaks Game Pass, Minecraft, Forza and Xbox-Live Steam titles on the machine the tool exists to make better at games |
 | Experimental: blocking dota2.com | Adds `dota2.com` and `www.dota2.com` to a PGM-owned block in the hosts file, on one unreplicated report in Valve's tracker ([Dota2-Gameplay #35438](https://github.com/ValveSoftware/Dota2-Gameplay/issues/35438)) that it stops Dota 2's frame rate decaying across a long session. No documented mechanism, no reproduction, no Valve response, and an unruled-out confound — applying it means restarting the client, so every "blocked" measurement began on a fresh process. MEDIUM and unticked; the rationale states the evidence and that the in-client news, event and store panels stop loading. The block is delimited, so other tools' entries are never touched and removal restores the file byte for byte |
 | Optimization mode | MEDIUM tweaks used to be dropped by the risk gate before the operator saw them, and later could only be reached by re-planning from the preview. The mode is now a three-way switch above OPTIMIZE, chosen before planning: «Обычная» plans SAFE and LOW only; «Средняя» plans MEDIUM too but delivers it **unticked**, so allowing the class and choosing a change stay two separate acts; «Жёсткая» delivers every row ticked, irreversible removals included — choosing that mode is the operator's choice of the whole class, the hint under the switch says so in the warning colour, and the preview still names every row and lets any of them be unticked. Every session starts at «Обычная» |
@@ -173,7 +174,7 @@ platform plugin, the one club PCs use.
 | Issue detection | Findings carry severity, remedy and threshold provenance |
 | Dashboard GUI | PySide6 dark theme; scan, optimize, profile, cleanup and Steam-reset work run on worker threads; score explainer; one primary action (**Оптимизировать ПК**) with every other tool grouped beside the metrics (Диагностика / Настройка / Профиль клуба / Очистка). Lime accent from the club logo, text contrast ≥ 4.5:1, a keyboard-only focus ring, fits a 1024 px-wide screen. Optimize, disk cleanup, the Steam reset and the usage survey show one bar under the status line — filled when the step can say how far it is, animated when it cannot. A write in progress (apply, wipe, cleanup, or a folder delete or move) blocks the window from closing |
 
-**1094 tests passing**, plus one opt-in live test that changes and restores
+**1146 tests passing**, plus one opt-in live test that changes and restores
 the active power plan (`PGM_LIVE_SYSTEM_TESTS=1`).
 
 ### Running it
@@ -391,6 +392,7 @@ been executed in their target environment:
   deleted, on throwaway data. Clicking through the GUI and moving a real
   application's folder have not been done.
 - The «Ядра GPU» benchmark against a real driver. Everything around it is tested against fakes — core selection, ranking, the registry read/write (an in-memory fake `winreg`), the tweak through the real engine with undo, the scan's sequencing, stop, crash and restore paths — and the read-only half has run live (6 cores / 12 threads → candidates CPU 2, 4, 6, 8, 10; the RTX 3060's existing pin to CPU 6 and MSI state read correctly). The driver restart, the Vulkan scene and PresentMon were never run, because restarting the only GPU is not something a test may do to a machine. The first real run should be attended.
+- The in-app update against a real release. The check, the signature (genuine, wrong key, wrong file, renamed old release), the foreign-address refusal, the busy check, the rename swap and its rollback, and the failed-start message are all tested with fakes, a throwaway key and files in a temp folder; renaming a running exe was confirmed on this machine. No signed release exists yet, so a real download-and-restart has not run, and the built exe was only smoke-tested (`PGM_SELFTEST=1`: the signature library and bundled tools load).
 - Every Windows 11-specific code path.
 - SmartShell protection — no SmartShell installation exists here. The
   protected-application list is config-driven and untested against the real
@@ -416,7 +418,35 @@ Planned: `SECURITY.md`, `TWEAKS.md`, `PROFILE_SCHEMA.md`, `DEVELOPMENT.md`,
 
 ---
 
+## Releasing an update
+
+One-time setup: `python scripts/update_signing.py keygen` asks for a passphrase,
+writes the encrypted private key to `~/.pudge-cleaner/update-signing-key.pem`
+(outside the repository — back it up, never commit or sync it) and the public
+half to `pudge_gaming_manager/core/update/key.py`, which **must be committed**
+and shipped in a build before that build can install anything. Until then a
+build shows that an update exists but refuses to install it.
+
+Each release:
+
+```bash
+# bump __version__ in pudge_gaming_manager/__init__.py, then
+.venv/Scripts/python.exe -m PyInstaller --noconfirm --clean PudgeCleaner.spec
+cp dist/PudgeCleaner.exe dist/PudgeCleaner-<version>.exe
+.venv/Scripts/python.exe scripts/update_signing.py sign dist/PudgeCleaner-<version>.exe --version <version>
+gh release create v<version> dist/PudgeCleaner-<version>.exe dist/PudgeCleaner-<version>.exe.sig --prerelease
+```
+
+The version in the file name, the `--version` argument and `__version__` must
+agree (`1.0.0` or `1.0.0-dev.6`). A release without its `.sig` is invisible to
+the updater. A build can only update to a release signed with the key it
+carries: lose the key and every installed copy has to be replaced by hand.
+
+---
+
 ## Privacy
+
+The one network call besides the ICMP latency probe is the update check: a plain HTTPS request to `api.github.com` for this repository's release list, with no identifier and nothing from this PC in it.
 
 PGM does not collect personal documents, file contents, passwords, cookies,
 messages or game credentials. It stores no secret of any kind, which is the

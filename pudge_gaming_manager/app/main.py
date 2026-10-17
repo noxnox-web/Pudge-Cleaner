@@ -9,6 +9,7 @@ from PySide6.QtWidgets import QApplication
 
 from .. import __version__
 from ..core.nightly import NIGHTLY_ARGUMENT
+from ..core.update.updater import remove_leftovers
 from ..utilities import single_instance
 from ..utilities.logging_setup import setup_logging
 from .gui.dashboard import Dashboard
@@ -23,6 +24,9 @@ def main(argv: list[str] | None = None) -> int:
 
         return nightly_main()
     setup_logging()
+    # An update leaves the previous program beside the new one; it is
+    # deletable only once that process has ended, which it has by now.
+    remove_leftovers()
 
     app = QApplication(argv if argv is not None else sys.argv)
     app.setApplicationName("Pudge Cleaner")
