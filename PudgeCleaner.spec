@@ -5,7 +5,11 @@ a = Analysis(
     ['run.py'],
     pathex=[],
     binaries=[],
-    datas=[('pudge_gaming_manager/app/gui/assets', 'pudge_gaming_manager/app/gui/assets')],
+    datas=[
+        ('pudge_gaming_manager/app/gui/assets', 'pudge_gaming_manager/app/gui/assets'),
+        # The «Ядра GPU» tab's test scene and frame recorder, with their licences.
+        ('pudge_gaming_manager/vendor/gpu_affinity', 'pudge_gaming_manager/vendor/gpu_affinity'),
+    ],
     hiddenimports=[],
     hookspath=[],
     hooksconfig={},

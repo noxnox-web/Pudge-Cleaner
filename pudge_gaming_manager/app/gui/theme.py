@@ -309,6 +309,50 @@ def stylesheet() -> str:
         selection-color: {ACCENT_TEXT};
     }}
 
+    QTabWidget::pane {{ border: none; top: -1px; }}
+    QTabWidget::tab-bar {{ left: 28px; }}
+    QTabBar {{ background: transparent; }}
+    QTabBar::tab {{
+        background: transparent;
+        color: {TEXT_MUTED};
+        padding: 9px 20px;
+        border: none;
+        border-bottom: 2px solid transparent;
+        font-weight: 600;
+    }}
+    QTabBar::tab:hover {{ color: {TEXT}; }}
+    QTabBar::tab:selected {{ color: {TEXT}; border-bottom: 2px solid {ACCENT}; }}
+    QTabBar::tab:focus {{ color: {TEXT}; }}
+
+    QTableWidget {{
+        background-color: {SURFACE_RAISED};
+        border: 1px solid {BORDER};
+        border-radius: 8px;
+        gridline-color: {BORDER};
+        outline: none;
+        selection-background-color: {SURFACE};
+        selection-color: {TEXT};
+    }}
+    QTableWidget::item {{ padding: 6px 10px; }}
+    QTableWidget::item:selected {{ border: 1px solid {ACCENT}; }}
+    QHeaderView::section {{
+        background-color: {SURFACE_RAISED};
+        color: {TEXT_MUTED};
+        border: none;
+        border-bottom: 1px solid {BORDER};
+        padding: 6px 10px;
+        font-size: 12px;
+        font-weight: 600;
+    }}
+    QSpinBox {{
+        background-color: {SURFACE_RAISED};
+        border: 1px solid {BORDER};
+        border-radius: 6px;
+        padding: 6px 10px;
+        min-width: 64px;
+    }}
+    QSpinBox:hover {{ border-color: {TEXT_FAINT}; }}
+
     QToolTip {{
         background-color: {SURFACE_RAISED};
         color: {TEXT};

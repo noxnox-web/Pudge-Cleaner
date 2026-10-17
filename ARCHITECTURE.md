@@ -327,7 +327,7 @@ real system paths.
 pudge_gaming_manager/
 ├── app/           gui/ · controllers/ · state/
 ├── core/          scanner/ · diagnostics/ · optimization/ · repair/
-│                  rollback/ · scoring/ · profiles/
+│                  rollback/ · scoring/ · profiles/ · gpu_affinity/
 ├── windows/       services/ · registry/ · power/ · cleanup/
 │                  startup/ · processes/ · repair/ · schedule/
 │                  (GPU detection lives in hardware/gpu — see §7)
@@ -338,6 +338,7 @@ pudge_gaming_manager/
 ├── utilities/     command_runner · powershell_runner · registry_manager
 │                  service_manager · privileges · logging · exceptions
 │                  low_impact · single_instance
+├── vendor/        gpu_affinity/ — third-party benchmark binaries + licences
 └── tests/
 ```
 

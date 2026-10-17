@@ -17,6 +17,7 @@ from ..hardware.models import HardwareSnapshot
 from ..utilities.logging_setup import get_logger
 from ..windows.cleanup.rules import CleanupCategory
 from .audit.report import SystemReport, build_report
+from .gpu_affinity.service import GpuAffinityService
 from .optimization import history, restore_point
 from .optimization.pipeline import OptimizationPipeline
 from .optimization.recovery import InterruptedChange, acknowledge, find_interrupted
@@ -72,6 +73,13 @@ def create_settings_service(database: Database | None = None) -> SettingsService
     )
 
 
+def create_gpu_affinity_service(database: Database | None = None) -> GpuAffinityService:
+    """The «Ядра GPU» service, backed by the local database."""
+    return GpuAffinityService(
+        database or default_database(), restore_point=restore_point.create
+    )
+
+
 def change_history() -> list[history.ChangeRecord]:
     """Every change PGM recorded on this PC, newest first."""
     return history.list_changes(default_database())
@@ -114,6 +122,7 @@ def reset_for_tests() -> None:
 __all__ = [
     "acknowledge_interrupted",
     "change_history",
+    "create_gpu_affinity_service",
     "create_optimization_pipeline",
     "create_settings_service",
     "default_database",

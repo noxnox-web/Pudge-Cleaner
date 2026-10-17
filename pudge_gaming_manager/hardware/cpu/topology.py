@@ -32,6 +32,7 @@ _CPU_SET_INFORMATION = 0
 _OFF_SIZE = 0
 _OFF_TYPE = 4
 _OFF_GROUP = 12
+_OFF_LOGICAL = 14
 _OFF_CORE = 15
 _OFF_LLC = 16
 _OFF_EFFICIENCY = 18
@@ -55,11 +56,26 @@ class CpuTopology:
         return self.efficiency_cores > 0
 
 
-def parse(buffer: bytes) -> CpuTopology:
-    """Decode the raw records. Pure, so it is testable without the API."""
-    cores: dict[tuple[int, int], int] = {}
-    caches: set[tuple[int, int]] = set()
-    logical = 0
+@dataclass(frozen=True, slots=True)
+class CpuCore:
+    """One physical core and the logical processors that run on it."""
+
+    group: int
+    core_index: int
+    logical: tuple[int, ...]
+    """Logical processor numbers within the group, ascending. With SMT the
+    first is the core's primary thread, the rest are its siblings."""
+
+    efficiency_class: int
+    """Higher is faster. All equal on a CPU that is not hybrid."""
+
+    @property
+    def primary(self) -> int:
+        return self.logical[0]
+
+
+def _records(buffer: bytes):
+    """``(group, logical, core, llc, efficiency)`` for each CPU set record."""
     offset = 0
     while offset + _OFF_EFFICIENCY < len(buffer):
         size = int.from_bytes(buffer[offset + _OFF_SIZE: offset + _OFF_SIZE + 4], "little")
@@ -67,14 +83,25 @@ def parse(buffer: bytes) -> CpuTopology:
             break
         kind = int.from_bytes(buffer[offset + _OFF_TYPE: offset + _OFF_TYPE + 4], "little")
         if kind == _CPU_SET_INFORMATION:
-            group = int.from_bytes(buffer[offset + _OFF_GROUP: offset + _OFF_GROUP + 2], "little")
-            core = buffer[offset + _OFF_CORE]
-            llc = buffer[offset + _OFF_LLC]
-            efficiency = buffer[offset + _OFF_EFFICIENCY]
-            logical += 1
-            cores[(group, core)] = efficiency
-            caches.add((group, llc))
+            yield (
+                int.from_bytes(buffer[offset + _OFF_GROUP: offset + _OFF_GROUP + 2], "little"),
+                buffer[offset + _OFF_LOGICAL],
+                buffer[offset + _OFF_CORE],
+                buffer[offset + _OFF_LLC],
+                buffer[offset + _OFF_EFFICIENCY],
+            )
         offset += size
+
+
+def parse(buffer: bytes) -> CpuTopology:
+    """Decode the raw records. Pure, so it is testable without the API."""
+    cores: dict[tuple[int, int], int] = {}
+    caches: set[tuple[int, int]] = set()
+    logical = 0
+    for group, _lp, core, llc, efficiency in _records(buffer):
+        logical += 1
+        cores[(group, core)] = efficiency
+        caches.add((group, llc))
 
     classes = set(cores.values())
     top = max(classes) if classes else 0
@@ -88,22 +115,48 @@ def parse(buffer: bytes) -> CpuTopology:
     )
 
 
-def read() -> CpuTopology:
-    """Ask Windows. Never raises."""
+def parse_cores(buffer: bytes) -> list[CpuCore]:
+    """The physical cores, ordered by their first logical processor."""
+    threads: dict[tuple[int, int], list[int]] = {}
+    efficiency: dict[tuple[int, int], int] = {}
+    for group, lp, core, _llc, eff in _records(buffer):
+        threads.setdefault((group, core), []).append(lp)
+        efficiency[(group, core)] = eff
+    found = [
+        CpuCore(group, core, tuple(sorted(lps)), efficiency[(group, core)])
+        for (group, core), lps in threads.items()
+    ]
+    return sorted(found, key=lambda c: (c.group, c.primary))
+
+
+def _raw() -> tuple[bytes | None, str]:
+    """The CPU set buffer, or ``(None, reason)``."""
     try:
         kernel = ctypes.WinDLL("kernel32", use_last_error=True)
         query = kernel.GetSystemCpuSetInformation
     except (AttributeError, OSError) as exc:
-        return CpuTopology(error=str(exc))
+        return None, str(exc)
 
     needed = wintypes.ULONG(0)
     query(None, 0, ctypes.byref(needed), None, 0)
     if needed.value == 0:
-        return CpuTopology(error=f"код ошибки {ctypes.get_last_error()}")
+        return None, f"код ошибки {ctypes.get_last_error()}"
     buffer = ctypes.create_string_buffer(needed.value)
     if not query(buffer, needed, ctypes.byref(needed), None, 0):
-        return CpuTopology(error=f"код ошибки {ctypes.get_last_error()}")
-    return parse(buffer.raw[: needed.value])
+        return None, f"код ошибки {ctypes.get_last_error()}"
+    return buffer.raw[: needed.value], ""
 
 
-__all__ = ["CpuTopology", "parse", "read"]
+def read() -> CpuTopology:
+    """Ask Windows. Never raises."""
+    raw, error = _raw()
+    return CpuTopology(error=error) if raw is None else parse(raw)
+
+
+def read_cores() -> list[CpuCore]:
+    """The physical cores of this PC; empty when Windows does not say."""
+    raw, _error = _raw()
+    return [] if raw is None else parse_cores(raw)
+
+
+__all__ = ["CpuCore", "CpuTopology", "parse", "parse_cores", "read", "read_cores"]

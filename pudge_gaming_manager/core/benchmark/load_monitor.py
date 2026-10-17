@@ -14,10 +14,12 @@ tracer is the machine side:
 What it does not measure, and says so
 -------------------------------------
 Frame rate, frame time and 1% lows need per-frame present events from ETW
-(what PresentMon, CapFrameX and the NVIDIA/AMD overlays read). PGM neither
-bundles nor downloads such a tool, so it reports no FPS number at all rather
-than an estimate. Compare two recordings of the same scene before and after
-a change; do not read either one as "the change gave N frames".
+(what PresentMon, CapFrameX and the NVIDIA/AMD overlays read). This recording
+reads none, so it reports no FPS number at all rather than an estimate.
+(PresentMon ships with PGM only for the «Ядра GPU» tab's own test scene,
+which measures the GPU interrupt core, not a game.) Compare two recordings of
+the same scene before and after a change; do not read either one as "the
+change gave N frames".
 """
 
 from __future__ import annotations

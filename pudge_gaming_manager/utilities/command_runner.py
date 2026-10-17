@@ -115,6 +115,37 @@ class CommandResult:
         return [ln.strip() for ln in self.stdout.splitlines() if ln.strip()]
 
 
+class SpawnedProcess:
+    """A program started and left running; whoever started it must stop it.
+
+    For the one kind of child ``run`` cannot serve: a benchmark scene that
+    has to stay up while another tool measures it. Output is discarded and
+    no console window appears.
+    """
+
+    def __init__(self, popen: "subprocess.Popen[bytes]") -> None:
+        self._popen = popen
+
+    @property
+    def pid(self) -> int:
+        return self._popen.pid
+
+    @property
+    def running(self) -> bool:
+        return self._popen.poll() is None
+
+    def stop(self, timeout_s: float = 5.0) -> None:
+        """End the process, forcefully if it ignores the request. Idempotent."""
+        if self._popen.poll() is not None:
+            return
+        self._popen.terminate()
+        try:
+            self._popen.wait(timeout=timeout_s)
+        except subprocess.TimeoutExpired:
+            self._popen.kill()
+            self._popen.wait(timeout=timeout_s)
+
+
 @dataclass(slots=True)
 class CommandRunner:
     """Runs external programs with timeout, capture, logging and typed errors.
@@ -243,6 +274,41 @@ class CommandRunner:
                 context={"argv": argv, "stdout": result.stdout[:2000]},
             )
         return result
+
+    def spawn(self, args: Sequence[str], *, cwd: str | None = None) -> SpawnedProcess:
+        """Start a program and return without waiting for it.
+
+        The same resolution and no-shell rules as :meth:`run`. The caller
+        owns the process and must :meth:`SpawnedProcess.stop` it.
+
+        Raises:
+            CommandNotFoundError: The executable does not exist.
+            CommandFailedError: The OS refused to start it.
+        """
+        if not args:
+            raise ValueError("args must not be empty")
+        argv = [str(a) for a in args]
+        resolved = resolve_executable(argv[0])
+        if resolved is None:
+            raise CommandNotFoundError(argv[0], context={"argv": argv})
+        argv[0] = resolved
+        try:
+            popen = subprocess.Popen(  # noqa: S603 - argv list, shell=False
+                argv,
+                cwd=cwd,
+                stdin=subprocess.DEVNULL,
+                stdout=subprocess.DEVNULL,
+                stderr=subprocess.DEVNULL,
+                shell=False,
+                creationflags=_CREATE_NO_WINDOW if os.name == "nt" else 0,
+            )
+        except OSError as exc:
+            raise CommandFailedError(
+                " ".join(argv), exit_code=-1, stderr=str(exc),
+                context={"argv": argv},
+            ) from exc
+        _log.debug("spawned pid %s: %s", popen.pid, " ".join(argv))
+        return SpawnedProcess(popen)
 
     def try_run(
         self,

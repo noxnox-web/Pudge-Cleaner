@@ -40,6 +40,7 @@ from .tweaks.devices import (
 from .tweaks.display import SetRefreshRateTweak
 from .tweaks.dota_hosts import BlockDotaWebTweak
 from .tweaks.game_dvr import DisableGameDvrPolicyTweak, DisableGameDvrTweak
+from .tweaks.gpu_affinity import GpuInterruptAffinityTweak
 from .tweaks.mouse import DisableMouseAccelerationTweak
 from .tweaks.power import SetPowerPlanTweak
 from .tweaks.power_settings import (
@@ -117,6 +118,7 @@ _FACTORIES: dict[str, Callable[[ChangeRecord], Tweak]] = {
     DisableUsbPowerSavingTweak.id: lambda _r: DisableUsbPowerSavingTweak(),
     DisableNicPowerSavingTweak.id: lambda _r: DisableNicPowerSavingTweak(),
     DisableEnergyEfficientEthernetTweak.id: lambda _r: DisableEnergyEfficientEthernetTweak(),
+    GpuInterruptAffinityTweak.id: lambda _r: GpuInterruptAffinityTweak(),
     # Ids the same registry values had before they moved into the settings
     # catalogue. Old history rows must stay undoable.
     "graphics.gpu_scheduling.enable": _registry_value_tweak("hags"),

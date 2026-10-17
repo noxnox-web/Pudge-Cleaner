@@ -27,6 +27,7 @@ from PySide6.QtWidgets import (
     QMessageBox,
     QProgressBar,
     QPushButton,
+    QTabWidget,
     QVBoxLayout,
     QWidget,
 )
@@ -39,6 +40,7 @@ from ..controllers.steam_controller import SteamController
 from ..controllers.system_controller import SystemController
 from ..controllers.tools_controller import ToolsController
 from . import presenters, theme, widgets
+from .affinity_tab import AffinityTab
 from .dashboard_actions import ProfileAndGamesActions
 from .optimize_actions import OptimizeActions
 from .system_actions import SystemActions
@@ -118,14 +120,19 @@ class Dashboard(ProfileAndGamesActions, SystemActions, OptimizeActions, QMainWin
     # -- construction ------------------------------------------------------
 
     def _build(self) -> None:
-        root = QWidget()
-        outer = QVBoxLayout(root)
+        home = QWidget()
+        outer = QVBoxLayout(home)
         outer.setContentsMargins(28, 24, 28, 24)
         outer.setSpacing(18)
 
         outer.addLayout(self._build_header())
         outer.addLayout(self._build_body(), stretch=1)
-        self.setCentralWidget(root)
+
+        self._affinity_tab = AffinityTab()
+        tabs = QTabWidget()
+        tabs.addTab(home, "Обзор")
+        tabs.addTab(self._affinity_tab, "Ядра GPU")
+        self.setCentralWidget(tabs)
 
     def _build_header(self) -> QHBoxLayout:
         row = QHBoxLayout()
@@ -447,7 +454,7 @@ class Dashboard(ProfileAndGamesActions, SystemActions, OptimizeActions, QMainWin
             if self._tools.modifying
             else "Применяются или откатываются настройки."
             if self._system.applying
-            else None
+            else self._affinity_tab.blocks_close()
         )
         if blocker is not None:
             QMessageBox.warning(
@@ -463,4 +470,5 @@ class Dashboard(ProfileAndGamesActions, SystemActions, OptimizeActions, QMainWin
         self._cleanup.shutdown()
         self._tools.shutdown()
         self._system.shutdown()
+        self._affinity_tab.shutdown()
         super().closeEvent(event)
